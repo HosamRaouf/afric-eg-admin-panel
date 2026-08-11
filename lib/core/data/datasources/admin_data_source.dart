@@ -300,9 +300,11 @@ class AdminDataSource {
     final docs = await _service.readCollection(
       'workshops/$workshopId/sessions',
     );
-    return docs
+    final sessions = docs
         .map((d) => WorkshopSession.fromJson(d, id: d['__id__'] as String))
         .toList();
+    sessions.sort((a, b) => a.startTime.compareTo(b.startTime));
+    return sessions;
   }
 
   Future<void> addWorkshopSession(String workshopId, WorkshopSession s) async {

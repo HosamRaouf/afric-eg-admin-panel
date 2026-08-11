@@ -1011,6 +1011,17 @@ class _WorkshopSessionsDialog extends StatelessWidget {
                                       label: s.dayLabel!,
                                       color: AppColors.accent,
                                     ),
+                                  const SizedBox(width: 8),
+                                  GhostIconButton(
+                                    icon: Icons.edit_outlined,
+                                    onPressed: busy
+                                        ? null
+                                        : () => _openSessionEditor(
+                                            context,
+                                            workshopId: workshop.id,
+                                            session: s,
+                                          ),
+                                  ),
                                 ],
                               ),
                             );
@@ -1045,13 +1056,17 @@ class _WorkshopSessionsDialog extends StatelessWidget {
     );
   }
 
-  void _openSessionEditor(BuildContext context, {required String workshopId}) {
+  void _openSessionEditor(
+    BuildContext context, {
+    required String workshopId,
+    WorkshopSession? session,
+  }) {
     final bloc = context.read<WorkshopBloc>();
     showDialog(
       context: context,
       builder: (dialogContext) => BlocProvider.value(
         value: bloc,
-        child: _SessionEditorDialog(workshopId: workshopId),
+        child: _SessionEditorDialog(workshopId: workshopId, session: session),
       ),
     );
   }
@@ -1119,6 +1134,7 @@ class _SessionEditorDialogState extends State<_SessionEditorDialog> {
   }
 
   void _save(BuildContext context) {
+    final isNew = widget.session == null;
     final session = WorkshopSession(
       id: widget.session?.id ?? Ids.generate(),
       startTime: _startTime,
@@ -1129,7 +1145,7 @@ class _SessionEditorDialogState extends State<_SessionEditorDialog> {
       dayLabel: _dayLabel.text.trim().isEmpty ? null : _dayLabel.text.trim(),
     );
     context.read<WorkshopBloc>().add(
-      SaveWorkshopSessionEvent(widget.workshopId, session, isNew: true),
+      SaveWorkshopSessionEvent(widget.workshopId, session, isNew: isNew),
     );
   }
 
@@ -1146,9 +1162,9 @@ class _SessionEditorDialogState extends State<_SessionEditorDialog> {
             borderRadius: BorderRadius.circular(16),
             side: const BorderSide(color: AppColors.glassBorder),
           ),
-          title: const Text(
-            'New Session',
-            style: TextStyle(fontFamily: 'Inter', fontSize: 16),
+          title: Text(
+            widget.session == null ? 'New Session' : 'Edit Session',
+            style: const TextStyle(fontFamily: 'Inter', fontSize: 16),
           ),
           content: SizedBox(
             width: 420,
