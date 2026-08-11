@@ -1,0 +1,70 @@
+import 'package:equatable/equatable.dart';
+
+abstract class UsersEvent extends Equatable {
+  const UsersEvent();
+
+  @override
+  List<Object?> get props => [];
+}
+
+class LoadUsersEvent extends UsersEvent {
+  const LoadUsersEvent();
+}
+
+class CreateUserEvent extends UsersEvent {
+  final String email;
+  final String displayName;
+  final String role;
+  final String title;
+  final String photoUrl;
+  const CreateUserEvent({
+    required this.email,
+    required this.displayName,
+    required this.role,
+    this.title = '',
+    this.photoUrl = '',
+  });
+
+  @override
+  List<Object?> get props => [email, displayName, role, title, photoUrl];
+}
+
+class SendVerificationCodeEvent extends UsersEvent {
+  final String uid;
+  const SendVerificationCodeEvent(this.uid);
+
+  @override
+  List<Object?> get props => [uid];
+}
+
+class UpdateUserEvent extends UsersEvent {
+  final String uid;
+  final String? email;
+  final String? displayName;
+  final String? title;
+  final String? photoUrl;
+  final String? role;
+  const UpdateUserEvent({
+    required this.uid,
+    this.email,
+    this.displayName,
+    this.title,
+    this.photoUrl,
+    this.role,
+  });
+
+  @override
+  List<Object?> get props => [uid, email, displayName, title, photoUrl, role];
+}
+
+class DeleteUserEvent extends UsersEvent {
+  final String uid;
+  const DeleteUserEvent(this.uid);
+
+  @override
+  List<Object?> get props => [uid];
+}
+
+class ClearVerificationCodeEvent extends UsersEvent {
+  const ClearVerificationCodeEvent();
+}
