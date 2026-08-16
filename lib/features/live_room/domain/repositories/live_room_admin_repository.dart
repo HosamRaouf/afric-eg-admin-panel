@@ -5,8 +5,11 @@ import 'package:afric_eg_admin_panel/features/live_room/domain/entities/room.dar
 
 abstract class LiveRoomAdminRepository {
   FutureResult<List<Room>> getRooms();
+  StreamResult<List<Room>> watchRooms();
   FutureResult<void> setTalkLive(
       String dayKey, String sessionId, String talkId, bool isLive);
+  FutureResult<void> setTalkStatus(
+      String dayKey, String sessionId, String talkId, String status);
   FutureResult<String?> findSessionPath(String sessionId);
   FutureResult<Map<String, dynamic>?> getSessionDetails(String path);
   StreamResult<List<Question>> watchQuestions(String path);

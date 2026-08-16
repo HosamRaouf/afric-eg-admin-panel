@@ -8,12 +8,15 @@ class OverviewState extends Equatable {
 
   const OverviewState({this.isLoading = false, this.data, this.error});
 
-  OverviewState copyWith({bool? isLoading, OverviewData? data, String? error}) =>
-      OverviewState(
-        isLoading: isLoading ?? this.isLoading,
-        data: data ?? this.data,
-        error: error ?? this.error,
-      );
+  OverviewState copyWith({
+    bool? isLoading,
+    OverviewData? data,
+    String? error,
+  }) => OverviewState(
+    isLoading: isLoading ?? this.isLoading,
+    data: data ?? this.data,
+    error: error ?? this.error,
+  );
 
   @override
   List<Object?> get props => [isLoading, data, error];

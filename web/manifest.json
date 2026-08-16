@@ -1,11 +1,11 @@
 {
-    "name": "afric_eg_admin_panel",
-    "short_name": "afric_eg_admin_panel",
+    "name": "Afric 2026 - Admin Panel",
+    "short_name": "Afric 2026",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "AFRIC 2026 congress — admin panel.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -26,3 +26,17 @@ class ToggleTalkLiveEvent extends LiveRoomsEvent {
   @override
   List<Object?> get props => [room, talk, isLive];
 }
+
+class SetTalkStatusEvent extends LiveRoomsEvent {
+  final Room room;
+  final Talk talk;
+  final String status;
+  const SetTalkStatusEvent({
+    required this.room,
+    required this.talk,
+    required this.status,
+  });
+
+  @override
+  List<Object?> get props => [room, talk, status];
+}

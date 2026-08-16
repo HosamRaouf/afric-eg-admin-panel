@@ -8,6 +8,10 @@ class AgendaState extends Equatable {
   final List<AgendaDay> days;
   final String? selectedDayKey;
   final List<AgendaItem> items;
+
+  /// One date per congress day (`config/congress.eventDates`), used to show a
+  /// calendar date on each day chip and to resolve session timestamps.
+  final List<DateTime> eventDates;
   final String? error;
 
   const AgendaState({
@@ -16,6 +20,7 @@ class AgendaState extends Equatable {
     this.days = const [],
     this.selectedDayKey,
     this.items = const [],
+    this.eventDates = const [],
     this.error,
   });
 
@@ -25,18 +30,26 @@ class AgendaState extends Equatable {
     List<AgendaDay>? days,
     String? selectedDayKey,
     List<AgendaItem>? items,
+    List<DateTime>? eventDates,
     String? error,
-  }) =>
-      AgendaState(
-        isLoading: isLoading ?? this.isLoading,
-        isSaving: isSaving ?? this.isSaving,
-        days: days ?? this.days,
-        selectedDayKey: selectedDayKey ?? this.selectedDayKey,
-        items: items ?? this.items,
-        error: error ?? this.error,
-      );
+  }) => AgendaState(
+    isLoading: isLoading ?? this.isLoading,
+    isSaving: isSaving ?? this.isSaving,
+    days: days ?? this.days,
+    selectedDayKey: selectedDayKey ?? this.selectedDayKey,
+    items: items ?? this.items,
+    eventDates: eventDates ?? this.eventDates,
+    error: error ?? this.error,
+  );
 
   @override
-  List<Object?> get props =>
-      [isLoading, isSaving, days, selectedDayKey, items, error];
+  List<Object?> get props => [
+    isLoading,
+    isSaving,
+    days,
+    selectedDayKey,
+    items,
+    eventDates,
+    error,
+  ];
 }

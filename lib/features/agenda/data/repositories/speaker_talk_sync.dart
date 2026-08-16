@@ -18,8 +18,8 @@ class SpeakerTalkSync {
   SpeakerTalkSync({
     required AdminDataSource dataSource,
     required UsersRepository users,
-  })  : _dataSource = dataSource,
-        _users = users;
+  }) : _dataSource = dataSource,
+       _users = users;
 
   /// Adds/updates a talk doc under every (re)assigned speaker and removes the
   /// docs of speakers who were unassigned in [previous]. Pass `null` for
@@ -39,8 +39,12 @@ class SpeakerTalkSync {
       final talk = _talkOf(next, entry.key);
       if (talk == null) continue;
       for (final uid in entry.value) {
-        await _dataSource.setSpeakerTalk(uid, talk,
-            dayKey: dayKey, sessionId: next.id);
+        await _dataSource.setSpeakerTalk(
+          uid,
+          talk,
+          dayKey: dayKey,
+          sessionId: next.id,
+        );
       }
     }
 
@@ -68,18 +72,15 @@ class SpeakerTalkSync {
   /// Resolves display names to uids, keyed by lower-cased trimmed name.
   Future<Map<String, List<String>>> _resolveNames() async {
     final result = await _users.getUsers();
-    return result.fold(
-      (_) => const <String, List<String>>{},
-      (users) {
-        final map = <String, List<String>>{};
-        for (final u in users) {
-          final name = u.displayName.trim().toLowerCase();
-          if (name.isEmpty) continue;
-          (map[name] ??= <String>[]).add(u.uid);
-        }
-        return map;
-      },
-    );
+    return result.fold((_) => const <String, List<String>>{}, (users) {
+      final map = <String, List<String>>{};
+      for (final u in users) {
+        final name = u.displayName.trim().toLowerCase();
+        if (name.isEmpty) continue;
+        (map[name] ??= <String>[]).add(u.uid);
+      }
+      return map;
+    });
   }
 
   /// talkId -> uids of every user matching one of the talk's speaker names.

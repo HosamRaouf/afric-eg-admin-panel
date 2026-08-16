@@ -6,11 +6,13 @@ import 'package:afric_eg_admin_panel/features/auth/presentation/bloc/auth_bloc.d
 import 'package:afric_eg_admin_panel/features/auth/presentation/bloc/auth_event.dart';
 import 'package:afric_eg_admin_panel/features/auth/presentation/bloc/auth_state.dart';
 import 'package:afric_eg_admin_panel/features/auth/presentation/pages/login_page.dart';
+import 'package:afric_eg_admin_panel/features/committee/presentation/pages/committee_page.dart';
 import 'package:afric_eg_admin_panel/features/congress/presentation/pages/congress_page.dart';
 import 'package:afric_eg_admin_panel/features/live_room/presentation/pages/live_room_admin_page.dart';
 import 'package:afric_eg_admin_panel/features/live_room/presentation/pages/live_rooms_page.dart';
 import 'package:afric_eg_admin_panel/features/overview/presentation/pages/overview_page.dart';
 import 'package:afric_eg_admin_panel/features/push/presentation/pages/notifications_page.dart';
+import 'package:afric_eg_admin_panel/features/sponsors/presentation/pages/sponsors_page.dart';
 import 'package:afric_eg_admin_panel/features/users/presentation/pages/users_page.dart';
 import 'package:afric_eg_admin_panel/features/workshops/presentation/pages/workshops_page.dart';
 import 'package:flutter/material.dart';
@@ -80,6 +82,14 @@ class AppRouter {
               builder: (context, state) => const WorkshopsPage(),
             ),
             GoRoute(
+              path: '/sponsors',
+              builder: (context, state) => const SponsorsPage(),
+            ),
+            GoRoute(
+              path: '/committee',
+              builder: (context, state) => const CommitteePage(),
+            ),
+            GoRoute(
               path: '/users',
               builder: (context, state) => const UsersPage(),
             ),
@@ -122,6 +132,18 @@ const _navItems = <_NavItem>[
   ),
   _NavItem('/live-room', Icons.sensors_outlined, Icons.sensors, 'Live Room'),
   _NavItem('/workshops', Icons.school_outlined, Icons.school, 'Workshops'),
+  _NavItem(
+    '/sponsors',
+    Icons.handshake_outlined,
+    Icons.handshake,
+    'Sponsors',
+  ),
+  _NavItem(
+    '/committee',
+    Icons.badge_outlined,
+    Icons.badge,
+    'Committee',
+  ),
   _NavItem('/users', Icons.people_outline, Icons.people, 'Users'),
 ];
 

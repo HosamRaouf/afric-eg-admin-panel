@@ -1,20 +1,14 @@
-// Web-only admin panel: native drag & drop requires dart:html.
-// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
-
-import 'dart:async';
-import 'dart:html' as html;
-import 'dart:typed_data';
-
 import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
 import 'package:afric_eg_admin_panel/core/theme/colors.dart';
 import 'package:afric_eg_admin_panel/core/utils/ids.dart';
+import 'package:afric_eg_admin_panel/core/widgets/action_feedback.dart';
 import 'package:afric_eg_admin_panel/core/widgets/admin_widgets.dart';
+import 'package:afric_eg_admin_panel/core/widgets/image_upload_field.dart';
 import 'package:afric_eg_admin_panel/features/workshops/domain/entities/workshop.dart';
 import 'package:afric_eg_admin_panel/features/workshops/domain/entities/workshop_session.dart';
 import 'package:afric_eg_admin_panel/features/workshops/presentation/bloc/workshop_bloc.dart';
 import 'package:afric_eg_admin_panel/features/workshops/presentation/bloc/workshop_event.dart';
 import 'package:afric_eg_admin_panel/features/workshops/presentation/bloc/workshop_state.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -24,9 +18,8 @@ class WorkshopsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) =>
-          WorkshopBloc(repository: sl())..add(const LoadWorkshopsEvent()),
+    return BlocProvider.value(
+      value: sl<WorkshopBloc>(),
       child: const _WorkshopsView(),
     );
   }
@@ -110,14 +103,26 @@ class _WorkshopsView extends StatelessWidget {
     );
   }
 
-  void _openEditor(BuildContext context, {Workshop? workshop}) {
+  Future<void> _openEditor(BuildContext context, {Workshop? workshop}) async {
+    final isNew = workshop == null;
     final bloc = context.read<WorkshopBloc>();
-    showDialog(
+    final result = await showDialog<Workshop>(
       context: context,
-      builder: (_) => BlocProvider.value(
-        value: bloc,
-        child: _WorkshopDialog(workshop: workshop),
-      ),
+      builder: (_) => _WorkshopDialog(workshop: workshop),
+    );
+    if (result == null || !context.mounted) return;
+    await runActionWithFeedback(
+      context: context,
+      stream: bloc.stream,
+      isComplete: (WorkshopState s) => !s.isSaving,
+      errorOf: (WorkshopState s) => s.error,
+      dispatch: () => bloc.add(SaveWorkshopEvent(result, isNew: isNew)),
+      loadingMessage: isNew ? 'Creating workshop…' : 'Saving workshop…',
+      successTitle: isNew ? 'Workshop created' : 'Workshop saved',
+      successMessage: isNew
+          ? 'The workshop was added.'
+          : 'The workshop was updated.',
+      errorTitle: 'Could not save workshop',
     );
   }
 
@@ -133,48 +138,54 @@ class _WorkshopsView extends StatelessWidget {
     );
   }
 
-  void _confirmDelete(BuildContext context, Workshop w) {
+  Future<void> _confirmDelete(BuildContext context, Workshop w) async {
     final bloc = context.read<WorkshopBloc>();
-    showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => BlocProvider.value(
-        value: bloc,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF2a0f10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.glassBorder),
-          ),
-          title: const Text(
-            'Delete workshop?',
-            style: TextStyle(fontFamily: 'Inter', fontSize: 16),
-          ),
-          content: Text(
-            w.title,
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                bloc.add(DeleteWorkshopEvent(w.id));
-                Navigator.pop(dialogContext);
-              },
-              child: const Text(
-                'Delete',
-                style: TextStyle(color: AppColors.liveRed),
-              ),
-            ),
-          ],
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF2a0f10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.glassBorder),
         ),
+        title: const Text(
+          'Delete workshop?',
+          style: TextStyle(fontFamily: 'Inter', fontSize: 16),
+        ),
+        content: Text(
+          w.title,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 12,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.liveRed),
+            ),
+          ),
+        ],
       ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await runActionWithFeedback(
+      context: context,
+      stream: bloc.stream,
+      isComplete: (WorkshopState s) => !s.isSaving,
+      errorOf: (WorkshopState s) => s.error,
+      dispatch: () => bloc.add(DeleteWorkshopEvent(w.id)),
+      loadingMessage: 'Deleting workshop…',
+      successTitle: 'Workshop deleted',
+      successMessage: '${w.title} was removed.',
+      errorTitle: 'Could not delete workshop',
     );
   }
 }
@@ -398,8 +409,7 @@ class _WorkshopDialogState extends State<_WorkshopDialog> {
     });
   }
 
-  void _save(BuildContext context) {
-    final isNew = widget.workshop == null;
+  void _save() {
     final workshop = Workshop(
       id: widget.workshop?.id ?? _workshopId,
       title: _title.text.trim(),
@@ -412,49 +422,32 @@ class _WorkshopDialogState extends State<_WorkshopDialog> {
       imageURL: _optional(_imageURL),
       program: _optional(_program),
     );
-    context.read<WorkshopBloc>().add(SaveWorkshopEvent(workshop, isNew: isNew));
+    Navigator.pop(context, workshop);
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<WorkshopBloc, WorkshopState>(
-      listenWhen: (prev, curr) =>
-          prev.isSaving && !curr.isSaving && curr.error == null,
-      listener: (context, state) => Navigator.pop(context),
-      builder: (context, state) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF2a0f10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.glassBorder),
-          ),
-          title: Text(
-            widget.workshop == null ? 'New Workshop' : 'Edit Workshop',
-            style: const TextStyle(fontFamily: 'Inter', fontSize: 16),
-          ),
-          content: SingleChildScrollView(
-            child: SizedBox(
-              width: 480,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (state.error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Text(
-                        state.error!,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 12,
-                          color: AppColors.liveRed,
-                        ),
-                      ),
-                    ),
-                  GlassTextField(
-                    label: 'Title',
-                    controller: _title,
-                    hint: 'Ultrasound in OB/GYN Emergencies',
-                  ),
+    return AlertDialog(
+      backgroundColor: const Color(0xFF2a0f10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: AppColors.glassBorder),
+      ),
+      title: Text(
+        widget.workshop == null ? 'New Workshop' : 'Edit Workshop',
+        style: const TextStyle(fontFamily: 'Inter', fontSize: 16),
+      ),
+      content: SingleChildScrollView(
+        child: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GlassTextField(
+                label: 'Title',
+                controller: _title,
+                hint: 'Ultrasound in OB/GYN Emergencies',
+              ),
                   const SizedBox(height: 12),
                   GlassTextField(
                     label: 'Location',
@@ -502,9 +495,10 @@ class _WorkshopDialogState extends State<_WorkshopDialog> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  _ImageUploadField(
+                  ImageUploadField(
                     urlController: _imageURL,
                     objectId: _workshopId,
+                    pathPrefix: 'workshop',
                   ),
                   const SizedBox(height: 12),
                   GlassTextField(
@@ -532,315 +526,16 @@ class _WorkshopDialogState extends State<_WorkshopDialog> {
           ),
           actions: [
             TextButton(
-              onPressed: state.isSaving ? null : () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             GlassButton(
               label: 'Save',
               icon: Icons.save_outlined,
-              loading: state.isSaving,
-              onPressed: state.isSaving ? null : () => _save(context),
+              onPressed: _save,
             ),
           ],
         );
-      },
-    );
-  }
-}
-
-class _ImageUploadField extends StatefulWidget {
-  final TextEditingController urlController;
-  final String objectId;
-
-  const _ImageUploadField({
-    required this.urlController,
-    required this.objectId,
-  });
-
-  @override
-  State<_ImageUploadField> createState() => _ImageUploadFieldState();
-}
-
-class _ImageUploadFieldState extends State<_ImageUploadField> {
-  bool _dragging = false;
-  bool _uploading = false;
-  double? _progress;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    final win = html.window;
-    win.addEventListener('dragover', _onDragOver);
-    win.addEventListener('dragleave', _onDragLeave);
-    win.addEventListener('drop', _onDrop);
-  }
-
-  @override
-  void dispose() {
-    final win = html.window;
-    win.removeEventListener('dragover', _onDragOver);
-    win.removeEventListener('dragleave', _onDragLeave);
-    win.removeEventListener('drop', _onDrop);
-    super.dispose();
-  }
-
-  void _onDragOver(html.Event e) {
-    if (!mounted) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (!_dragging) setState(() => _dragging = true);
-  }
-
-  void _onDragLeave(html.Event e) {
-    if (!mounted) return;
-    e.preventDefault();
-    if (_dragging) setState(() => _dragging = false);
-  }
-
-  void _onDrop(html.Event e) {
-    if (!mounted) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (_dragging) setState(() => _dragging = false);
-    final data = (e as dynamic).dataTransfer as html.DataTransfer?;
-    final dropped = data?.files;
-    final file = (dropped == null || dropped.isEmpty) ? null : dropped.first;
-    if (file != null) _readAndUpload(file);
-  }
-
-  void _browse() {
-    final input = html.FileUploadInputElement()
-      ..accept = 'image/*'
-      ..multiple = false;
-    void cleanup() => input.remove();
-    input.onChange.first.then((_) {
-      cleanup();
-      final files = input.files;
-      final file = (files == null || files.isEmpty) ? null : files.first;
-      if (file != null) _readAndUpload(file);
-    }, onError: (_) => cleanup());
-    input.on['cancel'].first.then((_) => cleanup());
-    html.document.body?.append(input);
-    input.click();
-  }
-
-  void _readAndUpload(html.File file) {
-    final reader = html.FileReader();
-    reader.onLoad.listen((_) {
-      final bytes = reader.result;
-      if (bytes is Uint8List) {
-        _uploadBytes(bytes, file.name.isEmpty ? 'image.jpg' : file.name);
-      }
-    });
-    reader.onError.listen((_) {
-      if (mounted) setState(() => _error = 'Could not read the dropped file.');
-    });
-    reader.readAsArrayBuffer(file);
-  }
-
-  String _contentType(String name) {
-    final lower = name.toLowerCase();
-    if (lower.endsWith('.png')) return 'image/png';
-    if (lower.endsWith('.gif')) return 'image/gif';
-    if (lower.endsWith('.webp')) return 'image/webp';
-    return 'image/jpeg';
-  }
-
-  Future<void> _uploadBytes(Uint8List bytes, String name) async {
-    if (!mounted) return;
-    setState(() {
-      _uploading = true;
-      _progress = 0;
-      _error = null;
-    });
-    final ref = FirebaseStorage.instance.ref('workshop/${widget.objectId}.jpg');
-    final task = ref.putData(
-      bytes,
-      SettableMetadata(
-        contentType: _contentType(name),
-        cacheControl: 'public,max-age=86400',
-      ),
-    );
-    String? failure;
-    final done = Completer<void>();
-    final sub = task.snapshotEvents.listen((snap) {
-      if (!mounted) return;
-      if (snap.totalBytes > 0) {
-        setState(
-          () =>
-              _progress = (snap.bytesTransferred / snap.totalBytes).clamp(0, 1),
-        );
-      }
-      if (done.isCompleted) return;
-      switch (snap.state) {
-        case TaskState.success:
-          done.complete();
-          break;
-        case TaskState.error:
-          failure ??= 'Upload failed.';
-          done.complete();
-          break;
-        case TaskState.canceled:
-          failure ??= 'Upload canceled.';
-          done.complete();
-          break;
-        case TaskState.paused:
-        case TaskState.running:
-          // On web the SDK can stall without emitting a success state after
-          // the payload has fully transferred; treat full transfer as done.
-          if (snap.totalBytes > 0 && snap.bytesTransferred >= snap.totalBytes) {
-            done.complete();
-          }
-          break;
-      }
-    });
-    try {
-      await done.future.timeout(const Duration(seconds: 90));
-      if (failure != null) throw failure!;
-      final url = await _waitForDownloadUrl(ref);
-      if (!mounted) return;
-      widget.urlController.text = url;
-      setState(() {
-        _uploading = false;
-        _progress = 1;
-        _error = null;
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _uploading = false;
-          _error = 'Upload failed: $e';
-        });
-      }
-    } finally {
-      sub.cancel();
-    }
-  }
-
-  /// On web the upload can be finalized a moment after the transfer reports
-  /// complete, so a premature getDownloadURL returns 404 ('no object exists').
-  /// Retry briefly before surfacing a failure.
-  Future<String> _waitForDownloadUrl(Reference ref) async {
-    for (var attempt = 0; attempt < 15; attempt++) {
-      try {
-        return await ref.getDownloadURL();
-      } catch (_) {
-        final delay = 500 * (attempt + 1);
-        await Future.delayed(Duration(milliseconds: delay));
-      }
-    }
-    throw 'Upload finished but the file is not reachable yet. Please try again.';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: widget.urlController,
-      builder: (context, value, _) {
-        final url = value.text;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (url.isNotEmpty) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  height: 140,
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      color: AppColors.darkBase,
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.broken_image_outlined,
-                        size: 30,
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-            InkWell(
-              onTap: _uploading ? null : _browse,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                height: 96,
-                decoration: BoxDecoration(
-                  color: _dragging
-                      ? AppColors.primary.withValues(alpha: 0.2)
-                      : AppColors.glassBg,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _dragging ? AppColors.gold : AppColors.glassBorder,
-                    width: _dragging ? 2 : 1,
-                  ),
-                ),
-                child: _uploading
-                    ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 180,
-                            child: LinearProgressIndicator(
-                              value: _progress,
-                              minHeight: 4,
-                              color: AppColors.gold,
-                              backgroundColor: AppColors.glassBorder,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          const Text(
-                            'Uploading…',
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 11,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      )
-                    : const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.cloud_upload_outlined,
-                            size: 26,
-                            color: AppColors.accent,
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Drag & drop an image here\nor click to browse',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 11,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 11,
-                    color: AppColors.liveRedLight,
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
   }
 }
 
@@ -1056,18 +751,33 @@ class _WorkshopSessionsDialog extends StatelessWidget {
     );
   }
 
-  void _openSessionEditor(
+  Future<void> _openSessionEditor(
     BuildContext context, {
     required String workshopId,
     WorkshopSession? session,
-  }) {
+  }) async {
+    final isNew = session == null;
     final bloc = context.read<WorkshopBloc>();
-    showDialog(
+    final result = await showDialog<WorkshopSession>(
       context: context,
-      builder: (dialogContext) => BlocProvider.value(
-        value: bloc,
-        child: _SessionEditorDialog(workshopId: workshopId, session: session),
+      builder: (_) =>
+          _SessionEditorDialog(workshopId: workshopId, session: session),
+    );
+    if (result == null || !context.mounted) return;
+    await runActionWithFeedback(
+      context: context,
+      stream: bloc.stream,
+      isComplete: (WorkshopState s) => !s.isSaving,
+      errorOf: (WorkshopState s) => s.error,
+      dispatch: () => bloc.add(
+        SaveWorkshopSessionEvent(workshopId, result, isNew: isNew),
       ),
+      loadingMessage: isNew ? 'Creating session…' : 'Saving session…',
+      successTitle: isNew ? 'Session created' : 'Session saved',
+      successMessage: isNew
+          ? 'The session was added to the workshop.'
+          : 'The session was updated.',
+      errorTitle: 'Could not save session',
     );
   }
 }
@@ -1133,8 +843,7 @@ class _SessionEditorDialogState extends State<_SessionEditorDialog> {
     });
   }
 
-  void _save(BuildContext context) {
-    final isNew = widget.session == null;
+  void _save() {
     final session = WorkshopSession(
       id: widget.session?.id ?? Ids.generate(),
       startTime: _startTime,
@@ -1144,46 +853,27 @@ class _SessionEditorDialogState extends State<_SessionEditorDialog> {
       isBreak: _isBreak,
       dayLabel: _dayLabel.text.trim().isEmpty ? null : _dayLabel.text.trim(),
     );
-    context.read<WorkshopBloc>().add(
-      SaveWorkshopSessionEvent(widget.workshopId, session, isNew: isNew),
-    );
+    Navigator.pop(context, session);
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<WorkshopBloc, WorkshopState>(
-      listenWhen: (prev, curr) =>
-          prev.isSaving && !curr.isSaving && curr.error == null,
-      listener: (context, state) => Navigator.pop(context),
-      builder: (context, state) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF2a0f10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.glassBorder),
-          ),
-          title: Text(
-            widget.session == null ? 'New Session' : 'Edit Session',
-            style: const TextStyle(fontFamily: 'Inter', fontSize: 16),
-          ),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (state.error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Text(
-                      state.error!,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: 12,
-                        color: AppColors.liveRed,
-                      ),
-                    ),
-                  ),
-                Row(
+    return AlertDialog(
+      backgroundColor: const Color(0xFF2a0f10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: AppColors.glassBorder),
+      ),
+      title: Text(
+        widget.session == null ? 'New Session' : 'Edit Session',
+        style: const TextStyle(fontFamily: 'Inter', fontSize: 16),
+      ),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
                   children: [
                     Expanded(
                       child: _TimeField(
@@ -1244,19 +934,16 @@ class _SessionEditorDialogState extends State<_SessionEditorDialog> {
           ),
           actions: [
             TextButton(
-              onPressed: state.isSaving ? null : () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             GlassButton(
               label: 'Save',
               icon: Icons.save_outlined,
-              loading: state.isSaving,
-              onPressed: state.isSaving ? null : () => _save(context),
+              onPressed: _save,
             ),
           ],
         );
-      },
-    );
   }
 }
 

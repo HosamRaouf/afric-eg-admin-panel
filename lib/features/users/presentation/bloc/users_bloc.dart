@@ -1,3 +1,4 @@
+import 'package:afric_eg_admin_panel/features/users/domain/entities/panel_user.dart';
 import 'package:afric_eg_admin_panel/features/users/domain/repositories/users_repository.dart';
 import 'package:afric_eg_admin_panel/features/users/presentation/bloc/users_event.dart';
 import 'package:afric_eg_admin_panel/features/users/presentation/bloc/users_state.dart';
@@ -19,6 +20,7 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
   }
 
   Future<void> _onLoad(LoadUsersEvent event, Emitter<UsersState> emit) async {
+    if (state.users.isNotEmpty) return;
     emit(state.copyWith(isLoading: true, isSaving: false, error: null));
     final result = await _repository.getUsers();
     if (isClosed) return;
@@ -36,18 +38,35 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       role: event.role,
       title: event.title,
       photoUrl: event.photoUrl,
+      password: event.password,
+      manualPassword: event.manualPassword,
     );
     if (isClosed) return;
     result.fold(
       (failure) =>
           emit(state.copyWith(isSaving: false, error: failure.message)),
-      (code) => emit(state.copyWith(
-        isSaving: false,
-        verificationCode: code,
-        codeAction: 'create',
-      )),
+      (code) {
+        final users = [
+          ...state.users,
+          PanelUser(
+            uid: code.uid,
+            email: code.email,
+            displayName: event.displayName,
+            title: event.title,
+            photoUrl: event.photoUrl,
+            role: code.role,
+            isFirstLogin: !event.manualPassword,
+            firstLoginPassword: event.password,
+          ),
+        ];
+        emit(state.copyWith(
+          isSaving: false,
+          users: users,
+          verificationCode: code,
+          codeAction: 'create',
+        ));
+      },
     );
-    add(const LoadUsersEvent());
   }
 
   Future<void> _onSendCode(
@@ -75,12 +94,19 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
       title: event.title,
       photoUrl: event.photoUrl,
       role: event.role,
+      password: event.password,
     );
     if (isClosed) return;
     result.fold(
       (failure) =>
           emit(state.copyWith(isSaving: false, error: failure.message)),
-      (_) => add(const LoadUsersEvent()),
+      (user) => emit(state.copyWith(
+        isSaving: false,
+        users: [
+          for (final u in state.users)
+            if (u.uid == event.uid) user else u,
+        ],
+      )),
     );
   }
 
@@ -91,7 +117,13 @@ class UsersBloc extends Bloc<UsersEvent, UsersState> {
     result.fold(
       (failure) =>
           emit(state.copyWith(isSaving: false, error: failure.message)),
-      (_) => add(const LoadUsersEvent()),
+      (_) => emit(state.copyWith(
+        isSaving: false,
+        users: [
+          for (final u in state.users)
+            if (u.uid != event.uid) u,
+        ],
+      )),
     );
   }
 }

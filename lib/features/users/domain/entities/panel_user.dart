@@ -12,6 +12,7 @@ class PanelUser {
   final String photoUrl;
   final String role;
   final bool isFirstLogin;
+  final String firstLoginPassword;
   final bool disabled;
   final String createdAt;
 
@@ -23,6 +24,7 @@ class PanelUser {
     this.photoUrl = '',
     this.role = 'attendee',
     this.isFirstLogin = false,
+    this.firstLoginPassword = '',
     this.disabled = false,
     this.createdAt = '',
   });
@@ -36,6 +38,7 @@ class PanelUser {
       photoUrl: json['photoURL'] as String? ?? '',
       role: json['role'] as String? ?? 'attendee',
       isFirstLogin: json['isFirstLogin'] as bool? ?? false,
+      firstLoginPassword: json['firstLoginPassword'] as String? ?? '',
       disabled: json['disabled'] as bool? ?? false,
       createdAt: json['createdAt'] as String? ?? '',
     );
@@ -48,6 +51,7 @@ class PanelUser {
     String? photoUrl,
     String? role,
     bool? isFirstLogin,
+    String? firstLoginPassword,
   }) {
     return PanelUser(
       uid: uid,
@@ -57,6 +61,7 @@ class PanelUser {
       photoUrl: photoUrl ?? this.photoUrl,
       role: role ?? this.role,
       isFirstLogin: isFirstLogin ?? this.isFirstLogin,
+      firstLoginPassword: firstLoginPassword ?? this.firstLoginPassword,
       disabled: disabled,
       createdAt: createdAt,
     );
@@ -83,16 +88,18 @@ class PanelUser {
   }
 }
 
-/// Result of issuing (or creating with) a verification code — includes the
-/// code itself, the QR payload (`email:code`) and whether the email was sent.
+/// Result of issuing (or creating with) a sign-in code — includes the code
+/// itself and the QR payload (`email:code`) the app scans to sign in.
 class VerificationCodeResult {
   final String uid;
   final String email;
   final String code;
   final String qrPayload;
   final String role;
-  final bool emailed;
-  final String emailError;
+
+  /// True when the code is a manually-entered password (the user's final
+  /// password) rather than a temporary generated code.
+  final bool isManualPassword;
 
   const VerificationCodeResult({
     required this.uid,
@@ -100,8 +107,7 @@ class VerificationCodeResult {
     required this.code,
     required this.qrPayload,
     required this.role,
-    required this.emailed,
-    this.emailError = '',
+    this.isManualPassword = false,
   });
 
   factory VerificationCodeResult.fromJson(Map<String, dynamic> json) {
@@ -111,8 +117,7 @@ class VerificationCodeResult {
       code: json['code'] as String? ?? '',
       qrPayload: json['qrPayload'] as String? ?? '',
       role: json['role'] as String? ?? 'attendee',
-      emailed: json['emailed'] as bool? ?? false,
-      emailError: json['emailError'] as String? ?? '',
+      isManualPassword: json['manualPassword'] == true,
     );
   }
 }

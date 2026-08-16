@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Mirror of a single `talk` inside an agenda `SessionBlock`.
 class Talk {
   final String id;
+  final String type; // talk | break | ceremony
   final DateTime startTime;
   final DateTime endTime;
   final List<String> speakers;
@@ -15,6 +16,7 @@ class Talk {
   Talk({
     required this.id,
     required this.title,
+    this.type = 'talk',
     this.speakers = const [],
     required this.role,
     required this.hall,
@@ -22,33 +24,35 @@ class Talk {
     DateTime? endTime,
     this.status = 'upcoming',
     this.sponsoredBy,
-  })  : startTime = startTime ?? DateTime(2026, 1, 1),
-        endTime = endTime ?? DateTime(2026, 1, 1);
+  }) : startTime = startTime ?? DateTime(2026, 1, 1),
+       endTime = endTime ?? DateTime(2026, 1, 1);
 
   factory Talk.fromJson(Map<String, dynamic> json) => Talk(
-        id: json['id'] as String? ?? '',
-        title: json['title'] as String? ?? '',
-        speakers: _parseSpeakers(json['speakers'], json['speaker']),
-        role: json['role'] as String? ?? '',
-        hall: json['hall'] as String? ?? '',
-        startTime: _parseTime(json['startTime'] ?? json['time']),
-        endTime: _parseTime(json['endTime'] ?? json['time']),
-        status: json['status'] as String? ?? 'upcoming',
-        sponsoredBy: json['sponsoredBy'] as String?,
-      );
+    id: json['id'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    type: json['type'] as String? ?? 'talk',
+    speakers: _parseSpeakers(json['speakers'], json['speaker']),
+    role: json['role'] as String? ?? '',
+    hall: json['hall'] as String? ?? '',
+    startTime: _parseTime(json['startTime'] ?? json['time']),
+    endTime: _parseTime(json['endTime'] ?? json['time']),
+    status: json['status'] as String? ?? 'upcoming',
+    sponsoredBy: json['sponsoredBy'] as String?,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'startTime': Timestamp.fromDate(startTime),
-        'endTime': Timestamp.fromDate(endTime),
-        'speakers': speakers,
-        'title': title,
-        'role': role,
-        'hall': hall,
-        'status': status,
-        if (sponsoredBy != null && sponsoredBy!.isNotEmpty)
-          'sponsoredBy': sponsoredBy,
-      };
+    'id': id,
+    'type': type,
+    'startTime': Timestamp.fromDate(startTime),
+    'endTime': Timestamp.fromDate(endTime),
+    'speakers': speakers,
+    'title': title,
+    'role': role,
+    'hall': hall,
+    'status': status,
+    if (sponsoredBy != null && sponsoredBy!.isNotEmpty)
+      'sponsoredBy': sponsoredBy,
+  };
 
   /// Parses the stored `speakers`: a `speakers` list (current), or a legacy
   /// single `speaker` string which may itself hold comma-separated names.
@@ -76,7 +80,7 @@ class Talk {
   static DateTime _parseTime(dynamic value) {
     if (value is Timestamp) return value.toDate();
     if (value is String && value.isNotEmpty) {
-      final first = value.split(RegExp(r'[\u2013\u2014\-–]')).first.trim();
+      final first = value.split(RegExp(r'[\u2013\u2014\-]')).first.trim();
       final dt = DateTime.tryParse(first);
       if (dt != null) return dt;
       final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(first);
@@ -94,6 +98,7 @@ class Talk {
   }
 
   Talk copyWith({
+    String? type,
     DateTime? startTime,
     DateTime? endTime,
     List<String>? speakers,
@@ -102,16 +107,16 @@ class Talk {
     String? hall,
     String? status,
     String? sponsoredBy,
-  }) =>
-      Talk(
-        id: id,
-        startTime: startTime ?? this.startTime,
-        endTime: endTime ?? this.endTime,
-        speakers: speakers ?? this.speakers,
-        title: title ?? this.title,
-        role: role ?? this.role,
-        hall: hall ?? this.hall,
-        status: status ?? this.status,
-        sponsoredBy: sponsoredBy ?? this.sponsoredBy,
-      );
+  }) => Talk(
+    id: id,
+    type: type ?? this.type,
+    startTime: startTime ?? this.startTime,
+    endTime: endTime ?? this.endTime,
+    speakers: speakers ?? this.speakers,
+    title: title ?? this.title,
+    role: role ?? this.role,
+    hall: hall ?? this.hall,
+    status: status ?? this.status,
+    sponsoredBy: sponsoredBy ?? this.sponsoredBy,
+  );
 }

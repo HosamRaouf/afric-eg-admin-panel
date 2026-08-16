@@ -36,7 +36,7 @@ class AfricAdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'AFRIC Admin',
+      title: 'Afric 2026 - Admin Panel',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       routerConfig: router,

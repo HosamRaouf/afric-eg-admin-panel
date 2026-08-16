@@ -21,6 +21,7 @@ class AnnouncementBloc extends Bloc<AnnouncementEvent, AnnouncementState> {
 
   Future<void> _onLoad(
       LoadAnnouncementsEvent event, Emitter<AnnouncementState> emit) async {
+    if (state.announcements.isNotEmpty) return;
     emit(state.copyWith(isLoading: true, error: null));
     try {
       final result = await _repository.getAnnouncements();
@@ -54,8 +55,18 @@ class AnnouncementBloc extends Bloc<AnnouncementEvent, AnnouncementState> {
               message: event.announcement.preview,
             );
           }
-          emit(state.copyWith(isSaving: false, error: null));
-          add(const LoadAnnouncementsEvent());
+          final current = state.announcements;
+          final announcements = event.isNew
+              ? [...current, event.announcement]
+              : [
+                  for (final a in current)
+                    if (a.id == event.announcement.id) event.announcement else a,
+                ];
+          emit(state.copyWith(
+            isSaving: false,
+            error: null,
+            announcements: announcements,
+          ));
         },
       );
     } catch (e, st) {
@@ -73,10 +84,14 @@ class AnnouncementBloc extends Bloc<AnnouncementEvent, AnnouncementState> {
       result.fold(
         (failure) =>
             emit(state.copyWith(isSaving: false, error: failure.message)),
-        (_) {
-          emit(state.copyWith(isSaving: false, error: null));
-          add(const LoadAnnouncementsEvent());
-        },
+        (_) => emit(state.copyWith(
+          isSaving: false,
+          error: null,
+          announcements: [
+            for (final a in state.announcements)
+              if (a.id != event.id) a,
+          ],
+        )),
       );
     } catch (e, st) {
       if (isClosed) return;
