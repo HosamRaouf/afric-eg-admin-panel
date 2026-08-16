@@ -161,7 +161,11 @@ class _ResultBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            sentAll ? 'Notification sent to all users' : 'Notification sent',
+            sentAll
+                ? (result.topicSent
+                    ? 'Notification sent to all subscribers'
+                    : 'Notification sent to all users')
+                : 'Notification sent',
             style: const TextStyle(
               fontFamily: 'Inter',
               fontSize: 13,
@@ -171,7 +175,9 @@ class _ResultBanner extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '${result.success} delivered · ${result.failure} failed · ${result.total} devices targeted',
+            result.topicSent
+                ? 'Broadcast delivered to all topic subscribers'
+                : '${result.success} delivered · ${result.failure} failed · ${result.total} devices targeted',
             style: const TextStyle(
               fontFamily: 'Inter',
               fontSize: 11,

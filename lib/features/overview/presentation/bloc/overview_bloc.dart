@@ -7,18 +7,22 @@ class OverviewBloc extends Bloc<OverviewEvent, OverviewState> {
   final OverviewRepository _repository;
 
   OverviewBloc({required OverviewRepository repository})
-      : _repository = repository,
-        super(const OverviewState()) {
+    : _repository = repository,
+      super(const OverviewState()) {
     on<LoadOverviewEvent>(_onLoad);
   }
 
   Future<void> _onLoad(
-      LoadOverviewEvent event, Emitter<OverviewState> emit) async {
+    LoadOverviewEvent event,
+    Emitter<OverviewState> emit,
+  ) async {
+    if (state.data != null && !event.force) return;
     emit(state.copyWith(isLoading: true, error: null));
     final result = await _repository.getOverview();
     if (isClosed) return;
     result.fold(
-      (failure) => emit(state.copyWith(isLoading: false, error: failure.message)),
+      (failure) =>
+          emit(state.copyWith(isLoading: false, error: failure.message)),
       (data) => emit(state.copyWith(isLoading: false, data: data)),
     );
   }

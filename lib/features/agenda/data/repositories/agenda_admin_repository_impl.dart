@@ -20,6 +20,16 @@ class AgendaAdminRepositoryImpl implements AgendaAdminRepository {
   }
 
   @override
+  FutureResult<List<DateTime>> getEventDates() async {
+    try {
+      final config = await _dataSource.getConfig();
+      return Right(config?.eventDates ?? const <DateTime>[]);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
   FutureResult<List<AgendaItem>> getItems(String dayKey) async {
     try {
       return Right(await _dataSource.getAgendaItems(dayKey));

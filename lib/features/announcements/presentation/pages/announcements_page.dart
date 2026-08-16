@@ -15,10 +15,8 @@ class AnnouncementsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) =>
-          AnnouncementBloc(repository: sl(), pushRepository: sl())
-            ..add(const LoadAnnouncementsEvent()),
+    return BlocProvider.value(
+      value: sl<AnnouncementBloc>(),
       child: const _AnnouncementsView(),
     );
   }

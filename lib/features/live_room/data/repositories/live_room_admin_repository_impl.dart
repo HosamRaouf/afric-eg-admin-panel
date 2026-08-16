@@ -1,5 +1,7 @@
 import 'package:afric_eg_admin_panel/core/data/datasources/admin_data_source.dart';
 import 'package:afric_eg_admin_panel/core/error/failures.dart';
+import 'package:afric_eg_admin_panel/features/agenda/domain/entities/agenda_day.dart';
+import 'package:afric_eg_admin_panel/features/agenda/domain/entities/agenda_item.dart';
 import 'package:afric_eg_admin_panel/features/live_room/domain/entities/hand_raise.dart';
 import 'package:afric_eg_admin_panel/features/live_room/domain/entities/question.dart';
 import 'package:afric_eg_admin_panel/features/live_room/domain/entities/room.dart';
@@ -15,20 +17,36 @@ class LiveRoomAdminRepositoryImpl implements LiveRoomAdminRepository {
   FutureResult<List<Room>> getRooms() async {
     try {
       final blocks = await _dataSource.listSessionBlocks();
-      final rooms = blocks.map((b) => Room(
-            id: b.$2.id,
-            dayKey: b.$1.key,
-            day: b.$1.day,
-            hall: b.$1.hall,
-            title: b.$2.title,
-            startTime: b.$2.startTime,
-            endTime: b.$2.endTime,
-            talks: b.$2.talks,
-          )).toList();
-      return Right(rooms);
+      return Right(_roomsFrom(blocks));
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));
     }
+  }
+
+  @override
+  StreamResult<List<Room>> watchRooms() async* {
+    try {
+      yield* _dataSource
+          .watchSessionBlocks()
+          .map((blocks) => Right(_roomsFrom(blocks)));
+    } catch (e) {
+      yield Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  List<Room> _roomsFrom(List<(AgendaDay, AgendaItem)> blocks) {
+    return blocks
+        .map((b) => Room(
+              id: b.$2.id,
+              dayKey: b.$1.key,
+              day: b.$1.day,
+              hall: b.$1.hall,
+              title: b.$2.title,
+              startTime: b.$2.startTime,
+              endTime: b.$2.endTime,
+              talks: b.$2.talks,
+            ))
+        .toList();
   }
 
   @override
@@ -36,6 +54,17 @@ class LiveRoomAdminRepositoryImpl implements LiveRoomAdminRepository {
       String dayKey, String sessionId, String talkId, bool isLive) async {
     try {
       await _dataSource.setTalkLive(dayKey, sessionId, talkId, isLive);
+      return const Right(null);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  FutureResult<void> setTalkStatus(
+      String dayKey, String sessionId, String talkId, String status) async {
+    try {
+      await _dataSource.setTalkStatus(dayKey, sessionId, talkId, status);
       return const Right(null);
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));

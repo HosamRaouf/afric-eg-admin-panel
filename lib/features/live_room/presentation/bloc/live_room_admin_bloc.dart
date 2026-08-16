@@ -234,15 +234,14 @@ class LiveRoomAdminBloc
   }
 
   /// Applies the live flag to one talk inside the session's talks array,
-  /// mirroring the datasource rule: marking a talk live clears the others.
+  /// mirroring the datasource rule: only the target talk's status changes, so
+  /// the parallel talks in a session can each go live independently.
   static List<dynamic> _withTalkStatus(dynamic talks, String talkId, bool isLive) {
     final list = (talks as List?) ?? const [];
     return list.map((t) {
       final map = Map<String, dynamic>.from(t as Map);
       if (map['id'] == talkId) {
         map['status'] = isLive ? 'live' : 'upcoming';
-      } else if (isLive && map['status'] == 'live') {
-        map['status'] = 'upcoming';
       }
       return map;
     }).toList();

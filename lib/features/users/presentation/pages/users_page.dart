@@ -8,6 +8,7 @@ import 'dart:math' as math;
 import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
 import 'package:afric_eg_admin_panel/core/services/auth_service.dart';
 import 'package:afric_eg_admin_panel/core/theme/colors.dart';
+import 'package:afric_eg_admin_panel/core/widgets/action_feedback.dart';
 import 'package:afric_eg_admin_panel/core/widgets/admin_widgets.dart';
 import 'package:afric_eg_admin_panel/features/push/domain/repositories/push_repository.dart';
 import 'package:afric_eg_admin_panel/features/users/domain/entities/panel_user.dart';
@@ -15,19 +16,20 @@ import 'package:afric_eg_admin_panel/features/users/presentation/bloc/users_bloc
 import 'package:afric_eg_admin_panel/features/users/presentation/bloc/users_event.dart';
 import 'package:afric_eg_admin_panel/features/users/presentation/bloc/users_state.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class UsersPage extends StatelessWidget {
   const UsersPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => UsersBloc(repository: sl())..add(const LoadUsersEvent()),
+    return BlocProvider.value(
+      value: sl<UsersBloc>(),
       child: const _UsersView(),
     );
   }
@@ -41,10 +43,17 @@ class _UsersView extends StatefulWidget {
 }
 
 class _UsersViewState extends State<_UsersView> {
+  static const int _pageSize = 25;
+
   VerificationCodeResult? _shownCode;
   String _roleFilter = 'all';
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  int _pageIndex = 0;
+
+  /// True while the create-user flow is showing its own status + QR dialogs,
+  /// so the bloc listener does not double-show the verification code dialog.
+  bool _suppressCodeDialog = false;
 
   @override
   void dispose() {
@@ -71,13 +80,18 @@ class _UsersViewState extends State<_UsersView> {
     return BlocConsumer<UsersBloc, UsersState>(
       listener: (context, state) {
         final code = state.verificationCode;
-        if (code != null && !identical(code, _shownCode)) {
+        if (code != null && !identical(code, _shownCode) && !_suppressCodeDialog) {
           _shownCode = code;
           _showCodeDialog(context, code, state.codeAction);
         }
       },
       builder: (context, state) {
         final visible = _filtered(state.users);
+        final totalPages = math.max(1, (visible.length / _pageSize).ceil());
+        final page = math.min(_pageIndex, totalPages - 1);
+        final startIndex = page * _pageSize;
+        final endIndex = math.min(startIndex + _pageSize, visible.length);
+        final pageUsers = visible.sublist(startIndex, endIndex);
         return SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -103,8 +117,10 @@ class _UsersViewState extends State<_UsersView> {
                   Expanded(
                     child: TextField(
                       controller: _searchController,
-                      onChanged: (v) =>
-                          setState(() => _query = v.trim().toLowerCase()),
+                      onChanged: (v) => setState(() {
+                        _query = v.trim().toLowerCase();
+                        _pageIndex = 0;
+                      }),
                       style: const TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 13,
@@ -170,8 +186,10 @@ class _UsersViewState extends State<_UsersView> {
                         ),
                         DropdownMenuItem(value: 'admin', child: Text('Admins')),
                       ],
-                      onChanged: (v) =>
-                          setState(() => _roleFilter = v ?? 'all'),
+                      onChanged: (v) => setState(() {
+                        _roleFilter = v ?? 'all';
+                        _pageIndex = 0;
+                      }),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -201,20 +219,37 @@ class _UsersViewState extends State<_UsersView> {
               else if (visible.isEmpty)
                 const EmptyState(message: 'No users match this filter.')
               else
-                _UsersTable(
-                  users: visible,
-                  currentUid: currentUid,
-                  onSendCode: state.isSaving
-                      ? null
-                      : (u) => _confirmSendCode(context, u),
-                  onEdit: state.isSaving ? null : (u) => _openEdit(context, u),
-                  onDelete: state.isSaving
-                      ? null
-                      : (u) => _confirmDelete(context, u),
-                  onNotify: state.isSaving
-                      ? null
-                      : (u) => _openNotify(context, u),
-                ),
+                ...[
+                  _UsersTable(
+                    users: pageUsers,
+                    startNo: startIndex,
+                    currentUid: currentUid,
+                    onSendCode: state.isSaving
+                        ? null
+                        : (u) => _confirmSendCode(context, u),
+                    onEdit: state.isSaving ? null : (u) => _openEdit(context, u),
+                    onDelete: state.isSaving
+                        ? null
+                        : (u) => _confirmDelete(context, u),
+                    onNotify: state.isSaving
+                        ? null
+                        : (u) => _openNotify(context, u),
+                  ),
+                  const SizedBox(height: 12),
+                  _PaginationBar(
+                    total: visible.length,
+                    start: startIndex,
+                    end: endIndex,
+                    page: page,
+                    totalPages: totalPages,
+                    onPrev: page > 0
+                        ? () => setState(() => _pageIndex = page - 1)
+                        : null,
+                    onNext: page < totalPages - 1
+                        ? () => setState(() => _pageIndex = page + 1)
+                        : null,
+                  ),
+                ],
               if (state.error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
@@ -234,24 +269,55 @@ class _UsersViewState extends State<_UsersView> {
     );
   }
 
-  void _openNewUser(BuildContext context) {
+  Future<void> _openNewUser(BuildContext context) async {
     final bloc = context.read<UsersBloc>();
-    showDialog(
+    final event = await showDialog<CreateUserEvent>(
       context: context,
-      builder: (_) =>
-          BlocProvider.value(value: bloc, child: const _NewUserDialog()),
+      builder: (_) => const _NewUserDialog(),
     );
+    if (event == null || !context.mounted) return;
+    _suppressCodeDialog = true;
+    final state = await runActionWithFeedback(
+      context: context,
+      stream: bloc.stream,
+      isComplete: (UsersState s) => !s.isSaving,
+      errorOf: (UsersState s) => s.error,
+      dispatch: () => bloc.add(event),
+      loadingMessage: 'Creating user…',
+      successTitle: 'User created',
+      successMessage: '${event.displayName.isNotEmpty ? event.displayName : event.email} was added as ${event.role}.',
+      errorTitle: 'Could not create user',
+    );
+    _suppressCodeDialog = false;
+    if (!context.mounted) return;
+    final code = state?.verificationCode;
+    if (code != null) {
+      _shownCode = code;
+      _showCodeDialog(context, code, state?.codeAction);
+    }
   }
 
-  void _openEdit(BuildContext context, PanelUser user) {
+  Future<void> _openEdit(BuildContext context, PanelUser user) async {
     final bloc = context.read<UsersBloc>();
     final isSelf = user.uid == sl<AuthService>().currentUid;
-    showDialog(
+    final event = await showDialog<UpdateUserEvent>(
       context: context,
       builder: (_) => BlocProvider.value(
         value: bloc,
         child: _EditUserDialog(user: user, isSelf: isSelf),
       ),
+    );
+    if (event == null || !context.mounted) return;
+    await runActionWithFeedback(
+      context: context,
+      stream: bloc.stream,
+      isComplete: (UsersState s) => !s.isSaving,
+      errorOf: (UsersState s) => s.error,
+      dispatch: () => bloc.add(event),
+      loadingMessage: 'Saving user…',
+      successTitle: 'User updated',
+      successMessage: '${user.displayName.isNotEmpty ? user.displayName : user.email} was updated.',
+      errorTitle: 'Could not update user',
     );
   }
 
@@ -265,13 +331,13 @@ class _UsersViewState extends State<_UsersView> {
           side: const BorderSide(color: AppColors.glassBorder),
         ),
         title: const Text(
-          'Send new verification code?',
+          'Generate sign-in QR?',
           style: TextStyle(fontFamily: 'Inter', fontSize: 16),
         ),
         content: Text(
-          'A new one-time code will be issued for ${user.email}. '
-          'Their current password stops working and a fresh code is emailed '
-          'to them.',
+          'A new one-time sign-in code will be issued for ${user.email}. '
+          'Their current password stops working. Scan the QR with the AFRIC '
+          '2026 app to sign in automatically.',
           style: const TextStyle(
             fontFamily: 'Inter',
             fontSize: 12,
@@ -284,7 +350,7 @@ class _UsersViewState extends State<_UsersView> {
             child: const Text('Cancel'),
           ),
           GlassButton(
-            label: 'Send Code',
+            label: 'Generate QR',
             icon: Icons.qr_code_2,
             onPressed: () {
               Navigator.pop(dialogContext);
@@ -305,7 +371,7 @@ class _UsersViewState extends State<_UsersView> {
     );
   }
 
-  void _confirmDelete(BuildContext context, PanelUser user) {
+  Future<void> _confirmDelete(BuildContext context, PanelUser user) async {
     final isSelf = user.uid == sl<AuthService>().currentUid;
     if (isSelf) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -313,7 +379,7 @@ class _UsersViewState extends State<_UsersView> {
       );
       return;
     }
-    showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF2a0f10),
@@ -337,20 +403,29 @@ class _UsersViewState extends State<_UsersView> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           GlassButton(
             label: 'Delete',
             icon: Icons.person_remove_outlined,
             destructive: true,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              context.read<UsersBloc>().add(DeleteUserEvent(user.uid));
-            },
+            onPressed: () => Navigator.pop(dialogContext, true),
           ),
         ],
       ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await runActionWithFeedback(
+      context: context,
+      stream: context.read<UsersBloc>().stream,
+      isComplete: (UsersState s) => !s.isSaving,
+      errorOf: (UsersState s) => s.error,
+      dispatch: () => context.read<UsersBloc>().add(DeleteUserEvent(user.uid)),
+      loadingMessage: 'Deleting user…',
+      successTitle: 'User deleted',
+      successMessage: '${user.email} was permanently removed.',
+      errorTitle: 'Could not delete user',
     );
   }
 
@@ -379,6 +454,7 @@ const double _avatarColW = 44;
 const double _nameColW = 220;
 const double _emailColW = 280;
 const double _roleColW = 130;
+const double _passwordColW = 150;
 const double _actionsColW = 200;
 const double _colGap = 20;
 const double _tableMinW =
@@ -387,12 +463,14 @@ const double _tableMinW =
     _nameColW +
     _emailColW +
     _roleColW +
+    _passwordColW +
     _actionsColW +
-    _colGap * 5 +
+    _colGap * 6 +
     32;
 
 class _UsersTable extends StatelessWidget {
   final List<PanelUser> users;
+  final int startNo;
   final String? currentUid;
   final void Function(PanelUser)? onSendCode;
   final void Function(PanelUser)? onEdit;
@@ -401,6 +479,7 @@ class _UsersTable extends StatelessWidget {
 
   const _UsersTable({
     required this.users,
+    required this.startNo,
     required this.currentUid,
     this.onSendCode,
     this.onEdit,
@@ -432,7 +511,7 @@ class _UsersTable extends StatelessWidget {
                   const _HeaderRow(),
                   ...users.asMap().entries.map(
                     (e) => _UserRow(
-                      no: e.key + 1,
+                      no: startNo + e.key + 1,
                       user: e.value,
                       isSelf: e.value.uid == currentUid,
                       onSendCode: onSendCode,
@@ -446,6 +525,98 @@ class _UsersTable extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _PaginationBar extends StatelessWidget {
+  final int total;
+  final int start;
+  final int end;
+  final int page;
+  final int totalPages;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  const _PaginationBar({
+    required this.total,
+    required this.start,
+    required this.end,
+    required this.page,
+    required this.totalPages,
+    this.onPrev,
+    this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final controlStyle = ButtonStyle(
+      foregroundColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.disabled)
+            ? AppColors.textDisabled
+            : AppColors.accent,
+      ),
+      textStyle: const WidgetStatePropertyAll(TextStyle(
+        fontFamily: 'Inter',
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      )),
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.glassBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        children: [
+          Text(
+            'Showing ${start + 1}–$end of $total',
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 11,
+              color: AppColors.textTertiary,
+            ),
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: onPrev,
+            style: controlStyle,
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.chevron_left, size: 18),
+                SizedBox(width: 2),
+                Text('Prev'),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              'Page ${page + 1} of $totalPages',
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onNext,
+            style: controlStyle,
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Next'),
+                SizedBox(width: 2),
+                Icon(Icons.chevron_right, size: 18),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -482,6 +653,11 @@ class _HeaderRow extends StatelessWidget {
           SizedBox(
             width: _roleColW,
             child: Text('ROLE', style: label),
+          ),
+          SizedBox(width: _colGap),
+          SizedBox(
+            width: _passwordColW,
+            child: Text('PASSWORD', style: label),
           ),
           SizedBox(width: _colGap),
           SizedBox(
@@ -523,7 +699,6 @@ class _UserRowState extends State<_UserRow> {
   @override
   Widget build(BuildContext context) {
     final user = widget.user;
-    final canSend = user.isProfessional;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -577,6 +752,11 @@ class _UserRowState extends State<_UserRow> {
             ),
             const SizedBox(width: _colGap),
             SizedBox(
+              width: _passwordColW,
+              child: _PasswordCell(password: user.firstLoginPassword),
+            ),
+            const SizedBox(width: _colGap),
+            SizedBox(
               width: _actionsColW,
               child: Align(
                 alignment: Alignment.centerRight,
@@ -584,17 +764,11 @@ class _UserRowState extends State<_UserRow> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Tooltip(
-                      message: canSend
-                          ? 'Send verification code (email + QR)'
-                          : 'Verification codes are for professional roles',
+                      message: 'Show sign-in QR',
                       child: _ActionButton(
                         icon: Icons.qr_code_2,
-                        color: canSend
-                            ? AppColors.pointsGreen
-                            : AppColors.textDisabled,
-                        onPressed: canSend
-                            ? () => widget.onSendCode?.call(user)
-                            : null,
+                        color: AppColors.pointsGreen,
+                        onPressed: () => widget.onSendCode?.call(user),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -753,6 +927,83 @@ class _RoleBadge extends StatelessWidget {
   }
 }
 
+class _PasswordCell extends StatelessWidget {
+  final String password;
+
+  const _PasswordCell({required this.password});
+
+  @override
+  Widget build(BuildContext context) {
+    if (password.isEmpty) {
+      return const Text(
+        '—',
+        style: TextStyle(
+          fontFamily: 'Inter',
+          fontSize: 11,
+          color: AppColors.textTertiary,
+        ),
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            password,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              letterSpacing: 0.5,
+              color: AppColors.pointsGreen,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        _CopyButton(text: password),
+      ],
+    );
+  }
+}
+
+class _CopyButton extends StatelessWidget {
+  final String text;
+
+  const _CopyButton({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Copy to clipboard',
+      child: InkWell(
+        onTap: () async {
+          await Clipboard.setData(ClipboardData(text: text));
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Password copied to clipboard'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: AppColors.glassBg,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: AppColors.glassBorder),
+          ),
+          child: const Icon(
+            Icons.copy_rounded,
+            size: 13,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final Color color;
@@ -834,8 +1085,9 @@ class _NotifyUserDialogState extends State<_NotifyUserDialog> {
       }),
       (r) => setState(() {
         _sending = false;
-        _success =
-            'Notification sent — ${r.success} of ${r.total} devices delivered.';
+        _success = r.topicSent
+            ? 'Notification sent to all subscribers.'
+            : 'Notification sent — ${r.success} of ${r.total} devices delivered.';
       }),
     );
   }
@@ -932,13 +1184,30 @@ class _NewUserDialog extends StatefulWidget {
   State<_NewUserDialog> createState() => _NewUserDialogState();
 }
 
+const _passwordAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+String _generatePanelPassword([int length = 8]) {
+  final rand = math.Random.secure();
+  return List.generate(
+    length,
+    (_) => _passwordAlphabet[rand.nextInt(_passwordAlphabet.length)],
+  ).join();
+}
+
 class _NewUserDialogState extends State<_NewUserDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _titleController = TextEditingController();
   final _photoController = TextEditingController();
+  final _passwordController = TextEditingController();
   String _role = 'speaker';
+  String? _passwordError;
+
+  /// Tracks how the password was produced: false (manual typing) assigns the
+  /// password directly and skips the QR popup; true (Generate button) keeps
+  /// the QR/code share flow.
+  bool _passwordGenerated = false;
 
   static bool _isProfessional(String role) =>
       role == 'speaker' || role == 'faculty' || role == 'sponsor';
@@ -949,21 +1218,31 @@ class _NewUserDialogState extends State<_NewUserDialog> {
     _emailController.dispose();
     _titleController.dispose();
     _photoController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
   void _submit() {
+    final password = _passwordController.text.trim();
+    if (password.length < 6) {
+      setState(() =>
+          _passwordError = 'Password must be at least 6 characters long.');
+      return;
+    }
+    setState(() => _passwordError = null);
     if (_formKey.currentState?.validate() ?? false) {
-      context.read<UsersBloc>().add(
+      Navigator.pop(
+        context,
         CreateUserEvent(
           email: _emailController.text.trim(),
           displayName: _nameController.text.trim(),
           role: _role,
           title: _titleController.text.trim(),
           photoUrl: _photoController.text.trim(),
+          password: password,
+          manualPassword: !_passwordGenerated,
         ),
       );
-      Navigator.pop(context);
     }
   }
 
@@ -1021,13 +1300,61 @@ class _NewUserDialogState extends State<_NewUserDialog> {
                     hint: 'e.g. Professor of OB/GYN',
                   ),
                 ],
+                const SizedBox(height: 14),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: GlassTextField(
+                        label: 'First-login password',
+                        controller: _passwordController,
+                        hint: 'Min 6 characters',
+                        onChanged: (_) => _passwordGenerated = false,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _passwordController.text = _generatePanelPassword();
+                            _passwordError = null;
+                            _passwordGenerated = true;
+                          });
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Generate'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.accent,
+                          textStyle: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_passwordError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      _passwordError!,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        color: AppColors.liveRed,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 12),
                 Text(
                   _role == 'admin'
                       ? 'Admin accounts can sign in to this admin panel.'
-                      : 'An initial verification code is generated, emailed and '
-                            'shown as a QR — the user uses it for their first '
-                            'sign-in, then sets their own password.',
+                      : 'Typed passwords are assigned to the email and shown '
+                            'in the users table. Generated passwords are '
+                            'shared as a QR code.',
                   style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 11,
@@ -1071,7 +1398,9 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   late final TextEditingController _emailController;
   late final TextEditingController _titleController;
   late final TextEditingController _photoController;
+  late final TextEditingController _passwordController;
   late String _role;
+  String? _passwordError;
   bool _resending = false;
 
   static bool isProfessional(String role) =>
@@ -1084,8 +1413,10 @@ class _EditUserDialogState extends State<_EditUserDialog> {
     _emailController = TextEditingController(text: widget.user.email);
     _titleController = TextEditingController(text: widget.user.title);
     _photoController = TextEditingController(text: widget.user.photoUrl);
+    _passwordController = TextEditingController();
     _role = widget.user.role == 'attendee' ? 'attendee' : widget.user.role;
     _photoController.addListener(() => setState(() {}));
+    _passwordController.addListener(() => setState(() {}));
   }
 
   @override
@@ -1094,11 +1425,20 @@ class _EditUserDialogState extends State<_EditUserDialog> {
     _emailController.dispose();
     _titleController.dispose();
     _photoController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
   void _submit() {
-    context.read<UsersBloc>().add(
+    final password = _passwordController.text.trim();
+    if (password.isNotEmpty && password.length < 6) {
+      setState(() =>
+          _passwordError = 'Password must be at least 6 characters long.');
+      return;
+    }
+    setState(() => _passwordError = null);
+    Navigator.pop(
+      context,
       UpdateUserEvent(
         uid: widget.user.uid,
         email: _emailController.text.trim(),
@@ -1106,9 +1446,9 @@ class _EditUserDialogState extends State<_EditUserDialog> {
         title: _titleController.text.trim(),
         photoUrl: _photoController.text.trim(),
         role: _role,
+        password: password.isEmpty ? null : password,
       ),
     );
-    Navigator.pop(context);
   }
 
   Future<void> _resendCode() async {
@@ -1131,7 +1471,6 @@ class _EditUserDialogState extends State<_EditUserDialog> {
   @override
   Widget build(BuildContext context) {
     final demotingAdmin = widget.user.isAdmin && _role != 'admin';
-    final canResend = widget.user.isProfessional;
     return AlertDialog(
       backgroundColor: const Color(0xFF2a0f10),
       shape: RoundedRectangleBorder(
@@ -1226,6 +1565,67 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                 ),
               ],
               const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: GlassTextField(
+                      label: 'New password',
+                      controller: _passwordController,
+                      hint: 'Leave blank to keep the current password',
+                      onChanged: (_) => setState(() => _passwordError = null),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _passwordController.text = _generatePanelPassword();
+                          _passwordError = null;
+                        });
+                      },
+                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                      label: const Text('Generate'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.accent,
+                        textStyle: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_passwordError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _passwordError!,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 11,
+                      color: AppColors.liveRed,
+                    ),
+                  ),
+                ),
+              if (_passwordController.text.isNotEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'This password is assigned to their account and shown in '
+                    'the users table. They will create their own password on '
+                    'next sign-in.',
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 11,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 14),
               _UserImageUploadField(
                 urlController: _photoController,
                 storagePath: 'users/${widget.user.uid}.jpg',
@@ -1235,8 +1635,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
         ),
       ),
       actions: [
-        if (canResend)
-          TextButton.icon(
+        TextButton.icon(
             onPressed: _resending ? null : _resendCode,
             icon: _resending
                 ? const SizedBox(
@@ -1248,7 +1647,7 @@ class _EditUserDialogState extends State<_EditUserDialog> {
                     ),
                   )
                 : const Icon(Icons.mail_outline, size: 16),
-            label: const Text('Resend Code'),
+            label: const Text('New Code'),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.highlight,
               textStyle: const TextStyle(fontFamily: 'Inter', fontSize: 12),
@@ -1281,44 +1680,6 @@ class _VerificationCodeDialog extends StatefulWidget {
 }
 
 class _VerificationCodeDialogState extends State<_VerificationCodeDialog> {
-  bool _copied = false;
-
-  Future<void> _copyCode() async {
-    await Clipboard.setData(ClipboardData(text: widget.code.code));
-    if (!mounted) return;
-    setState(() => _copied = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _copied = false);
-    });
-  }
-
-  Future<void> _composeEmail() async {
-    const subject = 'AFRIC 2026 — Professional Access';
-    final body =
-        'Hello,\n\n'
-        'Your AFRIC 2026 professional access details:\n\n'
-        'Email: ${widget.code.email}\n'
-        'Verification code: ${widget.code.code}\n\n'
-        'How to sign in:\n'
-        '1. Open the AFRIC 2026 app and tap "Professional Portal".\n'
-        '2. Enter your email and the verification code above, or scan the QR '
-        'code shown in the panel.\n'
-        '3. Create your personal password when prompted.\n\n'
-        'AFRIC 2026 — The Queens Edition';
-    final uri = Uri(
-      scheme: 'mailto',
-      path: widget.code.email,
-      queryParameters: {'subject': subject, 'body': body},
-    );
-    final ok = await launchUrl(uri);
-    if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open your email app.')),
-      );
-    }
-  }
-
   void _close() {
     Navigator.pop(context);
     widget.onClose();
@@ -1334,8 +1695,8 @@ class _VerificationCodeDialogState extends State<_VerificationCodeDialog> {
       ),
       title: Text(
         widget.isNewUser
-            ? 'User created — share access'
-            : 'New verification code',
+            ? 'User created — share sign-in QR'
+            : 'New sign-in QR',
         style: const TextStyle(fontFamily: 'Inter', fontSize: 16),
       ),
       content: SingleChildScrollView(
@@ -1350,6 +1711,50 @@ class _VerificationCodeDialogState extends State<_VerificationCodeDialog> {
                   fontFamily: 'Inter',
                   fontSize: 12,
                   color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.glassBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.glassBorder),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.code.isManualPassword
+                                ? 'Password'
+                                : 'Temporary password',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 10,
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.code.code,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 18,
+                              letterSpacing: 2,
+                              color: AppColors.highlight,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _CopyButton(text: widget.code.code),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
@@ -1376,69 +1781,21 @@ class _VerificationCodeDialogState extends State<_VerificationCodeDialog> {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Scan with the app (Professional Portal → scan)',
+                'Scan with the AFRIC 2026 app to sign in automatically.',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 10,
                   color: AppColors.textTertiary,
                 ),
               ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.gold.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Text(
-                  widget.code.code,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'SpaceGrotesk',
-                    fontSize: 30,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 8,
-                    color: AppColors.textWhite,
-                  ),
-                ),
-              ),
               const SizedBox(height: 8),
-              if (widget.code.emailed)
-                const StatusBadge(
-                  label: 'EMAILED',
-                  color: AppColors.answeredGreen,
-                )
-              else
-                Column(
-                  children: [
-                    const StatusBadge(
-                      label: 'EMAIL FAILED — SHARE MANUALLY',
-                      color: AppColors.liveRedLight,
-                    ),
-                    if (widget.code.emailError.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        widget.code.emailError,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 9,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              const SizedBox(height: 12),
-              const Text(
-                'Works once for first sign-in, then they create their own '
-                'password.',
+              Text(
+                widget.code.isManualPassword
+                    ? 'They sign in with this password directly.'
+                    : 'They create their own password on first sign-in.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 10,
                   color: AppColors.textTertiary,
@@ -1450,17 +1807,6 @@ class _VerificationCodeDialogState extends State<_VerificationCodeDialog> {
       ),
       actions: [
         TextButton(onPressed: _close, child: const Text('Done')),
-        TextButton.icon(
-          onPressed: _composeEmail,
-          icon: const Icon(Icons.mail_outline, size: 16),
-          label: const Text('Compose Email'),
-          style: TextButton.styleFrom(foregroundColor: AppColors.highlight),
-        ),
-        GlassButton(
-          label: _copied ? 'Copied!' : 'Copy Code',
-          icon: _copied ? Icons.check : Icons.content_copy,
-          onPressed: _copyCode,
-        ),
       ],
     );
   }

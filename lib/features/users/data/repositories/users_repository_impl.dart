@@ -37,6 +37,8 @@ class UsersRepositoryImpl implements UsersRepository {
     required String role,
     String title = '',
     String photoUrl = '',
+    String password = '',
+    bool manualPassword = false,
   }) async {
     try {
       final data = await _call('createUser', {
@@ -45,6 +47,8 @@ class UsersRepositoryImpl implements UsersRepository {
         'role': role,
         if (title.trim().isNotEmpty) 'title': title.trim(),
         if (photoUrl.trim().isNotEmpty) 'photoURL': photoUrl.trim(),
+        if (password.trim().isNotEmpty) 'password': password.trim(),
+        'manualPassword': manualPassword,
       });
       return Right(VerificationCodeResult.fromJson(data));
     } catch (e) {
@@ -70,6 +74,7 @@ class UsersRepositoryImpl implements UsersRepository {
     String? title,
     String? photoUrl,
     String? role,
+    String? password,
   }) async {
     try {
       final data = await _call('updateUser', {
@@ -79,6 +84,7 @@ class UsersRepositoryImpl implements UsersRepository {
         'title': ?(title?.trim()),
         'photoURL': ?(photoUrl?.trim()),
         'role': ?role,
+        'password': ?(password?.trim()),
       });
       return Right(PanelUser.fromJson({...data, 'uid': uid}));
     } catch (e) {

@@ -13,6 +13,8 @@ abstract class UsersRepository {
     required String role,
     String title,
     String photoUrl,
+    String password,
+    bool manualPassword,
   });
 
   FutureResult<VerificationCodeResult> sendVerificationCode(String uid);
@@ -24,6 +26,7 @@ abstract class UsersRepository {
     String? title,
     String? photoUrl,
     String? role,
+    String? password,
   });
 
   FutureResult<void> deleteUser(String uid);

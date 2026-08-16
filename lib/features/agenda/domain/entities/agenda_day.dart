@@ -1,4 +1,3 @@
-
 /// Mirror of `agenda/{dayKey}` metadata (`day`, `hall`).
 class AgendaDay {
   final String key; // e.g. day1_hall_a

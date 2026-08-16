@@ -16,9 +16,8 @@ class LiveRoomsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) =>
-          LiveRoomsBloc(repository: sl())..add(const LoadLiveRoomsEvent()),
+    return BlocProvider.value(
+      value: sl<LiveRoomsBloc>(),
       child: const _LiveRoomsView(),
     );
   }
@@ -268,6 +267,8 @@ class _TalkRow extends StatelessWidget {
               const SizedBox(width: 8),
               if (isLive)
                 const StatusBadge(label: 'LIVE', color: AppColors.liveRedLight),
+              if (talk.status == 'completed')
+                const StatusBadge(label: 'COMPLETED', color: AppColors.answeredGreen),
             ],
           ),
           const SizedBox(height: 2),
@@ -284,7 +285,10 @@ class _TalkRow extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               GlassButton(
                 label: isLive ? 'Stop' : 'Go Live',
@@ -293,7 +297,7 @@ class _TalkRow extends StatelessWidget {
                   ToggleTalkLiveEvent(room: room, talk: talk, isLive: !isLive),
                 ),
               ),
-              const SizedBox(width: 8),
+              _TalkStatusDropdown(room: room, talk: talk),
               GlassButton(
                 label: 'Open Live Room',
                 icon: Icons.arrow_forward,
@@ -304,6 +308,92 @@ class _TalkRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Compact Upcoming/Completed selector for a talk. Live is controlled by the
+/// dedicated Go Live/Stop button, so while a talk is on air the dropdown is
+/// replaced by a non-interactive Live badge instead of an empty control.
+class _TalkStatusDropdown extends StatelessWidget {
+  final Room room;
+  final Talk talk;
+
+  const _TalkStatusDropdown({required this.room, required this.talk});
+
+  @override
+  Widget build(BuildContext context) {
+    final isLive = talk.status == 'live';
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isLive
+            ? AppColors.liveRed.withValues(alpha: 0.12)
+            : AppColors.glassBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isLive
+              ? AppColors.liveRedLight.withValues(alpha: 0.5)
+              : AppColors.glassBorder,
+        ),
+      ),
+      child: isLive
+          ? const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.sensors, size: 14, color: AppColors.liveRedLight),
+                SizedBox(width: 6),
+                Text(
+                  'Live',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.liveRedLight,
+                  ),
+                ),
+              ],
+            )
+          : DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: talk.status == 'completed' ? 'completed' : 'upcoming',
+                isDense: true,
+                borderRadius: BorderRadius.circular(12),
+                dropdownColor: const Color(0xFF2a0f10),
+                icon: const Icon(
+                  Icons.keyboard_arrow_down,
+                  color: AppColors.textSecondary,
+                  size: 18,
+                ),
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 12,
+                  color: AppColors.textWhite,
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'upcoming',
+                    child: Text('Upcoming'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'completed',
+                    child: Text('Completed'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null || value == talk.status) return;
+                  context.read<LiveRoomsBloc>().add(
+                        SetTalkStatusEvent(
+                          room: room,
+                          talk: talk,
+                          status: value,
+                        ),
+                      );
+                },
+              ),
+            ),
     );
   }
 }

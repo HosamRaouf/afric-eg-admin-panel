@@ -8,5 +8,11 @@ abstract class OverviewEvent extends Equatable {
 }
 
 class LoadOverviewEvent extends OverviewEvent {
-  const LoadOverviewEvent();
+  /// When `true` the load runs even if data is already present — used by the
+  /// page's manual Refresh button.
+  final bool force;
+  const LoadOverviewEvent({this.force = false});
+
+  @override
+  List<Object?> get props => [force];
 }

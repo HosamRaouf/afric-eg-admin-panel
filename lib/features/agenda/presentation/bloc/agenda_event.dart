@@ -9,7 +9,13 @@ abstract class AgendaEvent extends Equatable {
 }
 
 class LoadAgendaEvent extends AgendaEvent {
-  const LoadAgendaEvent();
+  /// When true, re-fetches the day list even if already loaded. Used after the
+  /// congress config saves day changes so the agenda reflects them in place.
+  final bool force;
+  const LoadAgendaEvent({this.force = false});
+
+  @override
+  List<Object?> get props => [force];
 }
 
 class SelectDayEvent extends AgendaEvent {

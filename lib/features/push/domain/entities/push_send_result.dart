@@ -6,12 +6,14 @@ class PushSendResult extends Equatable {
   final int failure;
   final int total;
   final String? targeted;
+  final bool topicSent;
 
   const PushSendResult({
     required this.success,
     required this.failure,
     required this.total,
     this.targeted,
+    this.topicSent = false,
   });
 
   factory PushSendResult.fromJson(Map<String, dynamic> json) => PushSendResult(
@@ -19,8 +21,9 @@ class PushSendResult extends Equatable {
         failure: json['failure'] as int? ?? 0,
         total: json['total'] as int? ?? 0,
         targeted: json['targeted'] as String?,
+        topicSent: json['topicSent'] as bool? ?? false,
       );
 
   @override
-  List<Object?> get props => [success, failure, total, targeted];
+  List<Object?> get props => [success, failure, total, targeted, topicSent];
 }
