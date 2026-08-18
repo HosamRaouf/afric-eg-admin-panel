@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:developer' as dev;
+
 import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
 import 'package:afric_eg_admin_panel/core/firebase/firebase_options.dart';
 import 'package:afric_eg_admin_panel/core/router/app_router.dart';
@@ -12,6 +15,31 @@ import 'package:go_router/go_router.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Capture the ORIGINAL error before Flutter's broken web error reporter
+  // tries to render it and crashes with the _debugRender null check.
+  FlutterError.onError = (details) {
+    dev.log(
+      'FLUTTER ERROR: ${details.exception}\n${details.stack}',
+      name: 'FlutterError',
+      error: details.exception,
+      stackTrace: details.stack,
+    );
+    // Do NOT call FlutterError.presentError — it triggers the broken
+    // _debugRender path on web. Just log to dev console.
+  };
+
+  ErrorWidget.builder = (details) {
+    return Material(
+      color: Colors.transparent,
+      child: Center(
+        child: Text(
+          'Error: ${details.exception}',
+          style: const TextStyle(color: Colors.red, fontSize: 12),
+        ),
+      ),
+    );
+  };
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -20,11 +48,23 @@ Future<void> main() async {
 
   final router = AppRouter(sl<AuthRepository>()).router;
 
-  runApp(
-    BlocProvider<AuthBloc>(
-      create: (_) => AuthBloc(repository: sl<AuthRepository>()),
-      child: AfricAdminApp(router: router),
-    ),
+  runZonedGuarded(
+    () {
+      runApp(
+        BlocProvider<AuthBloc>(
+          create: (_) => AuthBloc(repository: sl<AuthRepository>()),
+          child: AfricAdminApp(router: router),
+        ),
+      );
+    },
+    (error, stackTrace) {
+      dev.log(
+        'UNCAUGHT: $error',
+        name: 'ZoneError',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    },
   );
 }
 

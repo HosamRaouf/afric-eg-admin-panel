@@ -1,3 +1,5 @@
+import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
+import 'package:afric_eg_admin_panel/core/services/talk_scheduler.dart';
 import 'package:afric_eg_admin_panel/features/agenda/data/repositories/speaker_talk_sync.dart';
 import 'package:afric_eg_admin_panel/features/agenda/domain/entities/agenda_day.dart';
 import 'package:afric_eg_admin_panel/features/agenda/domain/entities/agenda_item.dart';
@@ -123,6 +125,7 @@ class AgendaBloc extends Bloc<AgendaEvent, AgendaState> {
         final sorted = _sortedItems(items);
         _itemsByDay[event.dayKey] = sorted;
         emit(state.copyWith(isSaving: false, error: null, items: sorted));
+        sl<TalkScheduler>().refreshSchedule();
         await _syncSpeakerTalks(
           dayKey: event.dayKey,
           previous: previous,
@@ -151,6 +154,7 @@ class AgendaBloc extends Bloc<AgendaEvent, AgendaState> {
         ];
         _itemsByDay[event.dayKey] = items;
         emit(state.copyWith(isSaving: false, error: null, items: items));
+        sl<TalkScheduler>().refreshSchedule();
         if (item != null) {
           try {
             await _speakerTalkSync.removeTalks(item);

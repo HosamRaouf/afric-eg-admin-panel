@@ -336,6 +336,17 @@ class AdminDataSource {
     bool isLive,
   ) => setTalkStatus(dayKey, sessionId, talkId, isLive ? 'live' : 'completed');
 
+  /// Sets the session-level `isLive` flag. Used by the scheduler when all
+  /// talks in a session are completed to clear the session's live state.
+  Future<void> setSessionLive(
+    String dayKey,
+    String sessionId,
+    bool isLive,
+  ) async {
+    final path = 'agenda/$dayKey/sessions/$sessionId';
+    await _service.updateDoc(path, {'isLive': isLive});
+  }
+
   /// Sets a talk's state (`upcoming`, `live`, or `completed`) on the session
   /// document so the app's agenda and home highlights pick it up. Shares the
   /// write semantics of [setTalkLive]: only the talks array is written (the
@@ -401,6 +412,12 @@ class AdminDataSource {
       'chair': item.talks.isEmpty ? '' : item.talks.first.speakers.join(', '),
       'durationMinutes': _minutesBetween(item.startTime, item.endTime),
     });
+  }
+
+  /// Deletes a single `live_now/{talkId}` mirror doc. Used by the scheduler
+  /// sweep to clean up orphaned mirrors.
+  Future<void> deleteLiveMirror(String talkId) async {
+    await _service.deleteDoc('live_now/$talkId');
   }
 
   static String _hallFromDayKey(String dayKey) =>

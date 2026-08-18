@@ -1,5 +1,6 @@
 import 'package:afric_eg_admin_panel/core/data/datasources/admin_data_source.dart';
 import 'package:afric_eg_admin_panel/core/services/auth_service.dart';
+import 'package:afric_eg_admin_panel/core/services/talk_scheduler.dart';
 import 'package:afric_eg_admin_panel/features/agenda/data/repositories/agenda_admin_repository_impl.dart';
 import 'package:afric_eg_admin_panel/features/agenda/data/repositories/speaker_talk_sync.dart';
 import 'package:afric_eg_admin_panel/features/agenda/domain/repositories/agenda_admin_repository.dart';
@@ -107,4 +108,6 @@ Future<void> initDependencies({AdminDataSource? dataSource}) async {
       () => UsersBloc(repository: sl())..add(const LoadUsersEvent()));
   sl.registerLazySingleton<LiveRoomsBloc>(
       () => LiveRoomsBloc(repository: sl())..add(const LoadLiveRoomsEvent()));
+  sl.registerLazySingleton<TalkScheduler>(
+      () => TalkScheduler(sl<AdminDataSource>()));
 }
