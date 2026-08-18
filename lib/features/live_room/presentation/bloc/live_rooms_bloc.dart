@@ -14,11 +14,7 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
   LiveRoomsBloc({required LiveRoomAdminRepository repository})
       : _repository = repository,
         super(const LiveRoomsState()) {
-    // `restartable` lets pull-to-refresh cancel the previous handler (and its
-    // room stream) instead of stacking a second Firestore listener.
     on<LoadLiveRoomsEvent>(_onLoad, transformer: restartable());
-    // `concurrent` lets status-change events process even while `_onLoad`'s
-    // `emit.forEach` keeps the handler pending (the room stream is active).
     on<ToggleTalkLiveEvent>(_onToggleTalkLive, transformer: concurrent());
     on<SetTalkStatusEvent>(_onSetTalkStatus, transformer: concurrent());
   }
@@ -47,10 +43,23 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
       ToggleTalkLiveEvent event, Emitter<LiveRoomsState> emit) async {
     final status = event.isLive ? 'live' : 'completed';
     emit(state.copyWith(
-      rooms: state.rooms
-          .map((r) =>
-              r.id == event.room.id ? _withTalk(r, event.talk, status) : r)
-          .toList(),
+      rooms: state.rooms.map((r) {
+        if (r.id != event.room.id) return r;
+        if (!event.isLive) return _withTalk(r, event.talk, status);
+        return Room(
+          id: r.id,
+          dayKey: r.dayKey,
+          day: r.day,
+          hall: r.hall,
+          title: r.title,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          talks: r.talks
+              .map((t) => t.copyWith(
+                  status: t.id == event.talk.id ? 'live' : 'completed'))
+              .toList(),
+        );
+      }).toList(),
       error: null,
     ));
     final result = await _repository.setTalkLive(
@@ -62,12 +71,8 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
     if (isClosed) return;
     result.fold(
       (failure) => emit(state.copyWith(
-        // Revert the optimistic flip so a talk can't get stuck showing live
-        // when the write did not reach Firestore.
         rooms: state.rooms
-            .map((r) => r.id == event.room.id
-                ? _withTalk(r, event.talk, event.isLive ? 'completed' : 'live')
-                : r)
+            .map((r) => r.id == event.room.id ? event.room : r)
             .toList(),
         error: failure.message,
       )),
@@ -78,10 +83,23 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
   Future<void> _onSetTalkStatus(
       SetTalkStatusEvent event, Emitter<LiveRoomsState> emit) async {
     emit(state.copyWith(
-      rooms: state.rooms
-          .map((r) =>
-              r.id == event.room.id ? _withTalk(r, event.talk, event.status) : r)
-          .toList(),
+      rooms: state.rooms.map((r) {
+        if (r.id != event.room.id) return r;
+        if (event.status != 'live') return _withTalk(r, event.talk, event.status);
+        return Room(
+          id: r.id,
+          dayKey: r.dayKey,
+          day: r.day,
+          hall: r.hall,
+          title: r.title,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          talks: r.talks
+              .map((t) => t.copyWith(
+                  status: t.id == event.talk.id ? 'live' : 'completed'))
+              .toList(),
+        );
+      }).toList(),
       error: null,
     ));
     final result = await _repository.setTalkStatus(
@@ -93,11 +111,8 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
     if (isClosed) return;
     result.fold(
       (failure) => emit(state.copyWith(
-        // Revert the optimistic change if the write did not reach Firestore.
         rooms: state.rooms
-            .map((r) => r.id == event.room.id
-                ? _withTalk(r, event.talk, event.talk.status)
-                : r)
+            .map((r) => r.id == event.room.id ? event.room : r)
             .toList(),
         error: failure.message,
       )),

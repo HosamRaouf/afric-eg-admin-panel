@@ -125,6 +125,7 @@ class TalkScheduler {
             // sweep won't re-fire the write — but fire it once now.
             if (!startMoment.isAfter(now) && now.isBefore(endMoment)) {
               _started.add(talk.id);
+              _completeSessionTalks(session.id, talk.id);
             }
             // If the talk should already be completed, mark it as ended.
             if (!endMoment.isAfter(now)) {
@@ -138,8 +139,10 @@ class TalkScheduler {
               now: now,
               callback: () async {
                 _started.add(talk.id);
+                _completeSessionTalks(session.id, talk.id);
                 await _dataSource.setTalkLive(
                     day.key, session.id, talk.id, true);
+                await _completeSessionIfDone(day.key, session.id);
               },
             );
             _scheduleTimer(
@@ -257,9 +260,11 @@ class TalkScheduler {
             name: 'TalkScheduler',
           );
           _started.add(slot.talkId);
+          _completeSessionTalks(slot.sessionId, slot.talkId);
           try {
             await _dataSource.setTalkLive(
                 slot.dayKey, slot.sessionId, slot.talkId, true);
+            await _completeSessionIfDone(slot.dayKey, slot.sessionId);
           } catch (e) {
             _started.remove(slot.talkId);
             dev.log('CATCH-UP start failed: $e',
@@ -312,6 +317,18 @@ class TalkScheduler {
   }
 
   // ───────────────────── Session completion ─────────────────────
+
+  /// Marks all talks in [sessionId] as ended except [startedTalkId].
+  /// Called when a talk goes live — the previous (and any other) talks in the
+  /// session are implicitly completed by the data-source write, so the cache
+  /// must reflect that for `_completeSessionIfDone` to work correctly.
+  void _completeSessionTalks(String sessionId, String startedTalkId) {
+    for (final slot in _slots) {
+      if (slot.sessionId == sessionId && slot.talkId != startedTalkId) {
+        _ended.add(slot.talkId);
+      }
+    }
+  }
 
   /// After a talk completes, checks whether every talk in the session is
   /// done using cached slot data — no Firestore reads.

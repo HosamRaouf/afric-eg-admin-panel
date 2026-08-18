@@ -40,4 +40,3 @@ class SetTalkStatusEvent extends LiveRoomsEvent {
   @override
   List<Object?> get props => [room, talk, status];
 }
-

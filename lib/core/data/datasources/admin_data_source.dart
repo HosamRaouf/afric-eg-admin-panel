@@ -348,15 +348,11 @@ class AdminDataSource {
   }
 
   /// Sets a talk's state (`upcoming`, `live`, or `completed`) on the session
-  /// document so the app's agenda and home highlights pick it up. Shares the
-  /// write semantics of [setTalkLive]: only the talks array is written (the
-  /// session's `isLive` flag and `config/congress.liveSessionId` stay
-  /// untouched), and only the target talk's status changes so the parallel
-  /// talks in a session can each hold their own state.
-  ///
-  /// The `live_now/{talkId}` mirror doc is written when the talk goes live and
-  /// deleted for any non-live status (upcoming/completed) so home cards and
-  /// room live-status streams go dark immediately.
+  /// document so the app's agenda and home highlights pick it up.  Only one talk
+  /// per session can be `live` at any time: when [status] is `live`, every other
+  /// talk in the same session is automatically set to `completed` and its
+  /// `live_now/{talkId}` mirror is deleted so the home screen and live-room
+  /// streams go dark immediately for the replaced talk.
   Future<void> setTalkStatus(
     String dayKey,
     String sessionId,
@@ -372,11 +368,21 @@ class AdminDataSource {
       final map = Map<String, dynamic>.from(t as Map);
       if (map['id'] == talkId) {
         map['status'] = status;
+      } else if (status == 'live') {
+        map['status'] = 'completed';
       }
       return map;
     }).toList();
     await _service.updateDoc(path, {'talks': updated});
     await _writeLiveMirror(dayKey, sessionId, talkId, status == 'live', doc);
+    if (status == 'live') {
+      for (final t in talks) {
+        final id = (t as Map)['id'] as String?;
+        if (id != null && id.isNotEmpty && id != talkId) {
+          await _service.deleteDoc('live_now/$id');
+        }
+      }
+    }
   }
 
   /// Writes or deletes the `live_now/{talkId}` mirror doc. On-air writes a
