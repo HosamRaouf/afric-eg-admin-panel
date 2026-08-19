@@ -2,6 +2,7 @@ import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
 import 'package:afric_eg_admin_panel/core/theme/colors.dart';
 import 'package:afric_eg_admin_panel/core/utils/ids.dart';
 import 'package:afric_eg_admin_panel/core/widgets/admin_widgets.dart';
+import 'package:afric_eg_admin_panel/core/widgets/image_upload_field.dart';
 import 'package:afric_eg_admin_panel/features/sponsors/domain/entities/sponsor.dart';
 import 'package:afric_eg_admin_panel/features/sponsors/presentation/bloc/sponsor_bloc.dart';
 import 'package:afric_eg_admin_panel/features/sponsors/presentation/bloc/sponsor_event.dart';
@@ -247,6 +248,7 @@ class _SponsorDialogState extends State<_SponsorDialog> {
   late final TextEditingController _name;
   late final TextEditingController _image;
   late final TextEditingController _url;
+  late final String _sponsorId;
 
   @override
   void initState() {
@@ -255,6 +257,7 @@ class _SponsorDialogState extends State<_SponsorDialog> {
     _name = TextEditingController(text: s?.name ?? '');
     _image = TextEditingController(text: s?.image ?? '');
     _url = TextEditingController(text: s?.url ?? '');
+    _sponsorId = s?.id ?? Ids.generate();
   }
 
   @override
@@ -270,7 +273,7 @@ class _SponsorDialogState extends State<_SponsorDialog> {
 
     final isNew = widget.sponsor == null;
     final sponsor = Sponsor(
-      id: widget.sponsor?.id ?? Ids.generate(),
+      id: _sponsorId,
       name: _name.text.trim(),
       image: _image.text.trim(),
       url: _url.text.trim(),
@@ -310,11 +313,10 @@ class _SponsorDialogState extends State<_SponsorDialog> {
                     enabled: !state.isSaving,
                   ),
                   const SizedBox(height: 14),
-                  GlassTextField(
-                    label: 'Logo URL',
-                    controller: _image,
-                    hint: 'https://...',
-                    enabled: !state.isSaving,
+                  ImageUploadField(
+                    urlController: _image,
+                    objectId: _sponsorId,
+                    pathPrefix: 'sponsors',
                   ),
                   const SizedBox(height: 14),
                   GlassTextField(

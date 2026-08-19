@@ -220,7 +220,8 @@ class LiveRoomAdminBloc
     final roomId = current['id'] as String? ?? sessionId;
     final dayKey = path.split('/')[1];
     final result =
-        await _repository.setTalkLive(dayKey, roomId, talkId, event.isLive);
+        await _repository.setTalkLive(dayKey, roomId, talkId, event.isLive,
+            isManual: true);
     if (isClosed) return;
     result.fold(
       (failure) => emit(state.copyWith(
@@ -241,7 +242,9 @@ class LiveRoomAdminBloc
     return list.map((t) {
       final map = Map<String, dynamic>.from(t as Map);
       if (map['id'] == talkId) {
-        map['status'] = isLive ? 'live' : 'upcoming';
+        map['status'] = isLive ? 'live' : 'completed';
+      } else if (isLive && map['status'] == 'live') {
+        map['status'] = 'completed';
       }
       return map;
     }).toList();

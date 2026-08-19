@@ -38,6 +38,26 @@ class AdminDataSource {
 
   FirestoreService get _service => _firestoreService ?? FirestoreService();
 
+  // ──────────────────── Scheduler distributed lock ────────────────────────
+
+  Future<bool> acquireSchedulerLock({
+    required String leaderId,
+    Duration ttl = const Duration(seconds: 45),
+  }) => _service.acquireSchedulerLock(leaderId: leaderId, ttl: ttl);
+
+  Future<bool> refreshSchedulerLock({
+    required String leaderId,
+    Duration ttl = const Duration(seconds: 45),
+  }) => _service.refreshSchedulerLock(leaderId: leaderId, ttl: ttl);
+
+  Future<void> releaseSchedulerLock({required String leaderId}) =>
+      _service.releaseSchedulerLock(leaderId: leaderId);
+
+  Future<void> forceReleaseSchedulerLock() =>
+      _service.forceReleaseSchedulerLock();
+
+  Future<bool> isSchedulerLockHeld() => _service.isSchedulerLockHeld();
+
   // ─────────────────────────── Config ───────────────────────────
 
   Future<CongressConfig?> getConfig() async {
@@ -129,6 +149,7 @@ class AdminDataSource {
     final controller =
         StreamController<List<(AgendaDay, AgendaItem)>>.broadcast();
     final subscriptions = <StreamSubscription>[];
+    final sessionSubs = <String, StreamSubscription>{};
     final sessionsByDay = <String, List<Map<String, dynamic>>>{};
 
     void emit() {
@@ -155,16 +176,20 @@ class AdminDataSource {
         for (final key in keys) {
           if (sessionsByDay.containsKey(key)) continue;
           sessionsByDay[key] = const <Map<String, dynamic>>[];
-          subscriptions.add(
-            _service.streamCollection('agenda/$key/sessions').listen((docs) {
-              if (!sessionsByDay.containsKey(key)) return;
-              sessionsByDay[key] = docs;
-              emit();
-            }),
-          );
+          sessionSubs[key] = _service
+              .streamCollection('agenda/$key/sessions')
+              .listen((docs) {
+                if (!sessionsByDay.containsKey(key)) return;
+                sessionsByDay[key] = docs;
+                emit();
+              });
+          subscriptions.add(sessionSubs[key]!);
         }
         for (final key in sessionsByDay.keys.toList()) {
-          if (!keys.contains(key)) sessionsByDay.remove(key);
+          if (!keys.contains(key)) {
+            sessionSubs.remove(key)?.cancel();
+            sessionsByDay.remove(key);
+          }
         }
         emit();
       }),
@@ -282,6 +307,8 @@ class AdminDataSource {
 
   Future<void> addAgendaItem(String dayKey, AgendaItem item) async {
     await _service.setDoc('agenda/$dayKey/sessions/${item.id}', item.toJson());
+    _sessionPathCache.remove(item.id);
+    _missingSessionIds.remove(item.id);
   }
 
   Future<void> updateAgendaItem(String dayKey, AgendaItem item) async {
@@ -293,6 +320,8 @@ class AdminDataSource {
 
   Future<void> deleteAgendaItem(String dayKey, String id) async {
     await _service.deleteDoc('agenda/$dayKey/sessions/$id');
+    _sessionPathCache.remove(id);
+    _missingSessionIds.remove(id);
   }
 
   // ─────────────────────────── Speaker talk index ───────────────────────────
@@ -333,8 +362,10 @@ class AdminDataSource {
     String dayKey,
     String sessionId,
     String talkId,
-    bool isLive,
-  ) => setTalkStatus(dayKey, sessionId, talkId, isLive ? 'live' : 'completed');
+    bool isLive, {
+    bool isManual = false,
+  }) => setTalkStatus(dayKey, sessionId, talkId, isLive ? 'live' : 'completed',
+      isManual: isManual);
 
   /// Sets the session-level `isLive` flag. Used by the scheduler when all
   /// talks in a session are completed to clear the session's live state.
@@ -349,16 +380,17 @@ class AdminDataSource {
 
   /// Sets a talk's state (`upcoming`, `live`, or `completed`) on the session
   /// document so the app's agenda and home highlights pick it up.  Only one talk
-  /// per session can be `live` at any time: when [status] is `live`, every other
-  /// talk in the same session is automatically set to `completed` and its
-  /// `live_now/{talkId}` mirror is deleted so the home screen and live-room
-  /// streams go dark immediately for the replaced talk.
+  /// per session can be `live` at any time: when [status] is `live`, any talk
+  /// in the same session that was previously `live` is set to `completed`
+  /// and its `live_now/{talkId}` mirror is deleted so the home screen and
+  /// live-room streams transition immediately. Upcoming talks remain upcoming.
   Future<void> setTalkStatus(
     String dayKey,
     String sessionId,
     String talkId,
-    String status,
-  ) async {
+    String status, {
+    bool isManual = false,
+  }) async {
     if (talkId.trim().isEmpty) return;
     final path = 'agenda/$dayKey/sessions/$sessionId';
     final doc = await _service.readDoc(path);
@@ -368,18 +400,23 @@ class AdminDataSource {
       final map = Map<String, dynamic>.from(t as Map);
       if (map['id'] == talkId) {
         map['status'] = status;
-      } else if (status == 'live') {
+      } else if (status == 'live' && map['status'] == 'live') {
         map['status'] = 'completed';
       }
       return map;
     }).toList();
-    await _service.updateDoc(path, {'talks': updated});
-    await _writeLiveMirror(dayKey, sessionId, talkId, status == 'live', doc);
+    final hasAnyLive = updated.any((t) => (t as Map)['status'] == 'live');
+    await _service.updateDoc(path, {'talks': updated, 'isLive': hasAnyLive});
+    await _writeLiveMirror(dayKey, sessionId, talkId, status == 'live', doc,
+        isManual: isManual);
     if (status == 'live') {
       for (final t in talks) {
         final id = (t as Map)['id'] as String?;
         if (id != null && id.isNotEmpty && id != talkId) {
-          await _service.deleteDoc('live_now/$id');
+          final map = t;
+          if (map['status'] == 'live') {
+            await _service.deleteDoc('live_now/$id');
+          }
         }
       }
     }
@@ -393,8 +430,9 @@ class AdminDataSource {
     String sessionId,
     String talkId,
     bool isLive,
-    Map<String, dynamic> sessionDoc,
-  ) async {
+    Map<String, dynamic> sessionDoc, {
+    bool isManual = false,
+  }) async {
     final mirrorPath = 'live_now/$talkId';
     if (!isLive) {
       await _service.deleteDoc(mirrorPath);
@@ -406,17 +444,33 @@ class AdminDataSource {
       if (t.id == talkId) talk = t;
     }
     if (talk == null) return;
+    final start =
+        (talk.startTime.year > 2026 ||
+            talk.startTime.month != 1 ||
+            talk.startTime.day != 1)
+        ? talk.startTime
+        : item.startTime;
+    final end =
+        (talk.endTime.year > 2026 ||
+            talk.endTime.month != 1 ||
+            talk.endTime.day != 1)
+        ? talk.endTime
+        : item.endTime;
+    final hall = talk.hall.isNotEmpty ? talk.hall : _hallFromDayKey(dayKey);
+
     await _service.setDoc(mirrorPath, {
       'talkId': talkId,
       'talkTitle': talk.title,
       'speakers': talk.speakers,
       'sessionId': item.id,
       'sessionTitle': item.title,
-      'hall': _hallFromDayKey(dayKey),
-      'startTime': Timestamp.fromDate(item.startTime),
-      'endTime': Timestamp.fromDate(item.endTime),
+      'dayKey': dayKey,
+      'hall': hall,
+      'startTime': Timestamp.fromDate(start),
+      'endTime': Timestamp.fromDate(end),
       'chair': item.talks.isEmpty ? '' : item.talks.first.speakers.join(', '),
-      'durationMinutes': _minutesBetween(item.startTime, item.endTime),
+      'durationMinutes': _minutesBetween(start, end),
+      'isManual': isManual,
     });
   }
 
@@ -527,6 +581,14 @@ class AdminDataSource {
     return _service.readCollection('live_now');
   }
 
+  /// Returns `true` if the live_now mirror for [talkId] was set by a manual
+  /// "Go Live" toggle.  Manual talks must never be auto-ended by the
+  /// scheduler's catch-up logic or sweep.
+  Future<bool> isTalkManual(String talkId) async {
+    final doc = await _service.readDoc('live_now/$talkId');
+    return doc != null && doc['isManual'] == true;
+  }
+
   Future<void> deleteLiveQuestion(String path, String id) async {
     await _service.deleteDoc('$path/live_room/$id');
   }
@@ -592,5 +654,34 @@ class AdminDataSource {
 
   Future<void> deleteWorkshopSession(String workshopId, String id) async {
     await _service.deleteDoc('workshops/$workshopId/sessions/$id');
+  }
+
+  // ──────────────────── Speaker profiles index ─────────────────────
+
+  /// Rebuilds the `speaker_profiles/profiles` document — a single array of
+  /// {name, title, photoUrl, role} objects for every user whose role is
+  /// speaker, faculty, or sponsor. The attendee app reads this one doc
+  /// instead of querying the entire `users` collection (which would scan
+  /// every matching doc and bill per read).
+  ///
+  /// Call this after any user create/update/delete that may change roles.
+  Future<void> rebuildSpeakerProfiles() async {
+    final snapshot = await _service
+        .collection('users')
+        .where('role', whereIn: const ['speaker', 'faculty', 'sponsor'])
+        .get();
+    final profiles = snapshot.docs.map((d) {
+      final f = d.data();
+      return {
+        'name': f['displayName'] as String? ?? '',
+        'title': f['title'] as String? ?? '',
+        'photoUrl': f['photoUrl'] as String? ?? '',
+        'role': f['role'] as String? ?? '',
+      };
+    }).toList();
+    await _service.setDoc('speaker_profiles/profiles', {
+      'profiles': profiles,
+      'updatedAt': Timestamp.now(),
+    });
   }
 }

@@ -45,7 +45,7 @@ class AgendaItem {
     endTime: _parseTime(json['endTime']),
     talks:
         (json['talks'] as List?)
-            ?.map((e) => Talk.fromJson(e as Map<String, dynamic>))
+            ?.map((e) => Talk.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList() ??
         const [],
     raisedHands: (json['raisedHands'] as List?)?.cast<String>() ?? const [],

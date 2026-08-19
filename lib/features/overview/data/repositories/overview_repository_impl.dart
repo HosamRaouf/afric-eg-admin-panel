@@ -48,7 +48,8 @@ class OverviewRepositoryImpl implements OverviewRepository {
 
       var liveQuestions = 0;
       var raisedHands = 0;
-      for (final talk in await _dataSource.getLiveTalks()) {
+      final liveTalkDocs = await _dataSource.getLiveTalks();
+      for (final talk in liveTalkDocs) {
         final sessionId = talk['sessionId'] as String?;
         if (sessionId == null) continue;
         final path = await _dataSource.findSessionPath(sessionId);
@@ -57,9 +58,8 @@ class OverviewRepositoryImpl implements OverviewRepository {
         liveQuestions += (await _dataSource.getLiveQuestions(path)).length;
       }
 
-      final liveTalks = (await _dataSource.getLiveTalks())
-          .map(LiveTalkSummary.fromJson)
-          .toList();
+      final liveTalks =
+          liveTalkDocs.map(LiveTalkSummary.fromJson).toList();
 
       final users = await _fetchUsers();
 

@@ -51,9 +51,11 @@ class LiveRoomAdminRepositoryImpl implements LiveRoomAdminRepository {
 
   @override
   FutureResult<void> setTalkLive(
-      String dayKey, String sessionId, String talkId, bool isLive) async {
+      String dayKey, String sessionId, String talkId, bool isLive,
+      {bool isManual = false}) async {
     try {
-      await _dataSource.setTalkLive(dayKey, sessionId, talkId, isLive);
+      await _dataSource.setTalkLive(dayKey, sessionId, talkId, isLive,
+          isManual: isManual);
       return const Right(null);
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));

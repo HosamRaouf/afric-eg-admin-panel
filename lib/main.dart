@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as dev;
+import 'dart:ui';
 
 import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
 import 'package:afric_eg_admin_panel/core/firebase/firebase_options.dart';
@@ -8,69 +9,94 @@ import 'package:afric_eg_admin_panel/core/theme/app_theme.dart';
 import 'package:afric_eg_admin_panel/features/auth/domain/repositories/auth_repository.dart';
 import 'package:afric_eg_admin_panel/features/auth/presentation/bloc/auth_bloc.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  // Use runZonedGuarded to fix Zone mismatch by keeping initialization and runApp in the same zone.
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
-  // Capture the ORIGINAL error before Flutter's broken web error reporter
-  // tries to render it and crashes with the _debugRender null check.
-  FlutterError.onError = (details) {
-    dev.log(
-      'FLUTTER ERROR: ${details.exception}\n${details.stack}',
-      name: 'FlutterError',
-      error: details.exception,
-      stackTrace: details.stack,
-    );
-    // Do NOT call FlutterError.presentError — it triggers the broken
-    // _debugRender path on web. Just log to dev console.
-  };
+      // 1. Setup early error handling for the framework
+      FlutterError.onError = (details) {
+        dev.log(
+          'FLUTTER ERROR: ${details.exception}',
+          name: 'FlutterError',
+          error: details.exception,
+          stackTrace: details.stack,
+        );
+        if (kDebugMode) {
+          FlutterError.dumpErrorToConsole(details);
+        }
+      };
 
-  ErrorWidget.builder = (details) {
-    return Material(
-      color: Colors.transparent,
-      child: Center(
-        child: Text(
-          'Error: ${details.exception}',
-          style: const TextStyle(color: Colors.red, fontSize: 12),
+      // 2. Setup platform/async error handling
+      PlatformDispatcher.instance.onError = (error, stack) {
+        dev.log(
+          'UNCAUGHT ASYNC ERROR: $error',
+          name: 'PlatformError',
+          error: error,
+          stackTrace: stack,
+        );
+        return true;
+      };
+
+      try {
+        // 3. Initialize Core Services
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+
+        await initDependencies();
+
+        final authRepository = sl<AuthRepository>();
+        final router = AppRouter(authRepository).router;
+
+        runApp(
+          BlocProvider<AuthBloc>(
+            create: (_) => AuthBloc(repository: authRepository),
+            child: AfricAdminApp(router: router),
+          ),
+        );
+      } catch (e, stack) {
+        dev.log('FATAL INIT ERROR: $e', error: e, stackTrace: stack);
+        _runErrorApp(e.toString());
+      }
+    },
+    (error, stack) {
+      dev.log('ZONE ERROR: $error', error: error, stackTrace: stack);
+      _runErrorApp(error.toString());
+    },
+  );
+}
+
+/// Fallback app to show errors and prevent EngineFlutterView disposal assertions on Web
+void _runErrorApp(String message) {
+  runApp(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.dark,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: SelectableText(
+              'Afric 2026 Admin Panel\nStartup Failure:\n$message',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.red, fontSize: 14),
+            ),
+          ),
         ),
       ),
-    );
-  };
-
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  await initDependencies();
-
-  final router = AppRouter(sl<AuthRepository>()).router;
-
-  runZonedGuarded(
-    () {
-      runApp(
-        BlocProvider<AuthBloc>(
-          create: (_) => AuthBloc(repository: sl<AuthRepository>()),
-          child: AfricAdminApp(router: router),
-        ),
-      );
-    },
-    (error, stackTrace) {
-      dev.log(
-        'UNCAUGHT: $error',
-        name: 'ZoneError',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    },
+    ),
   );
 }
 
 class AfricAdminApp extends StatelessWidget {
   final GoRouter router;
-
   const AfricAdminApp({super.key, required this.router});
 
   @override

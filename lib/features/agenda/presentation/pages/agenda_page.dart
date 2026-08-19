@@ -698,6 +698,9 @@ class _AgendaItemDialogState extends State<_AgendaItemDialog> {
                                   key: _talkKeys[entry.key],
                                   initial: _talkInitials[entry.key],
                                   baseDate: _dayDate,
+                                  lockedHall: AgendaDay.fromKey(
+                                    widget.dayKey,
+                                  ).hall,
                                 ),
                               ],
                             ),
@@ -807,7 +810,13 @@ class _TimeField extends StatelessWidget {
 class _TalkEditor extends StatefulWidget {
   final Talk? initial;
   final DateTime baseDate;
-  const _TalkEditor({super.key, this.initial, required this.baseDate});
+  final String? lockedHall;
+  const _TalkEditor({
+    super.key,
+    this.initial,
+    required this.baseDate,
+    this.lockedHall,
+  });
 
   @override
   State<_TalkEditor> createState() => _TalkEditorState();
@@ -836,7 +845,9 @@ class _TalkEditorState extends State<_TalkEditor> {
     final initial = widget.initial;
     _title = TextEditingController(text: initial?.title ?? '');
     _role = TextEditingController(text: initial?.role ?? '');
-    _hall = TextEditingController(text: initial?.hall ?? 'A');
+    _hall = TextEditingController(
+      text: widget.lockedHall ?? initial?.hall ?? 'A',
+    );
     _sponsoredBy = TextEditingController(text: initial?.sponsoredBy ?? '');
     _speakers = List<String>.from(initial?.speakers ?? const []);
     _startTime = initial?.startTime ?? DateTime(2026, 1, 1, 9, 0);
@@ -975,11 +986,18 @@ class _TalkEditorState extends State<_TalkEditor> {
             const SizedBox(width: 10),
             SizedBox(
               width: 120,
-              child: GlassTextField(
-                label: 'Hall',
-                controller: _hall,
-                hint: 'A',
-              ),
+              child: widget.lockedHall != null
+                  ? GlassTextField(
+                      label: 'Hall',
+                      controller: _hall,
+                      hint: 'A',
+                      enabled: false,
+                    )
+                  : GlassTextField(
+                      label: 'Hall',
+                      controller: _hall,
+                      hint: 'A',
+                    ),
             ),
           ],
         ),

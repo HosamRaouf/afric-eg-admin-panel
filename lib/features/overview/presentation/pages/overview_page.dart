@@ -1,4 +1,5 @@
 import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
+import 'package:afric_eg_admin_panel/core/services/talk_scheduler.dart';
 import 'package:afric_eg_admin_panel/core/theme/colors.dart';
 import 'package:afric_eg_admin_panel/core/widgets/admin_widgets.dart';
 import 'package:afric_eg_admin_panel/features/congress/domain/entities/congress_config.dart';
@@ -216,6 +217,7 @@ class _OverviewView extends StatelessWidget {
                 spacing: 14,
                 runSpacing: 14,
                 children: [
+                  _SchedulerLeaderCard(),
                   _StatCard(
                     label: 'Live Talks',
                     value: '${data.liveTalkCount}',
@@ -329,8 +331,8 @@ class _LiveNowCard extends StatelessWidget {
                               color: AppColors.textWhite,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
+                  const SizedBox(height: 2),
+                  Text(
                             [
                               if (t.sessionTitle.isNotEmpty) t.sessionTitle,
                               if (t.hall.isNotEmpty) 'Hall ${t.hall}',
@@ -546,6 +548,59 @@ class _StatCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Live-updating card showing whether this device is the scheduler leader.
+class _SchedulerLeaderCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final scheduler = sl<TalkScheduler>();
+    return ValueListenableBuilder<bool>(
+      valueListenable: scheduler.isLeaderNotifier,
+      builder: (context, isLeader, _) {
+        return GlassCard(
+          padding: const EdgeInsets.all(16),
+          radius: 16,
+          child: SizedBox(
+            width: 170,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  isLeader ? Icons.shield : Icons.shield_outlined,
+                  size: 18,
+                  color: isLeader
+                      ? AppColors.answeredGreen
+                      : AppColors.textDisabled,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  isLeader ? 'LEADER' : 'PASSIVE',
+                  style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    color: isLeader
+                        ? AppColors.answeredGreen
+                        : AppColors.textDisabled,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Scheduler',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

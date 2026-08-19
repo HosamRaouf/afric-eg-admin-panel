@@ -55,8 +55,11 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
           startTime: r.startTime,
           endTime: r.endTime,
           talks: r.talks
-              .map((t) => t.copyWith(
-                  status: t.id == event.talk.id ? 'live' : 'completed'))
+              .map((t) {
+                if (t.id == event.talk.id) return t.copyWith(status: 'live');
+                if (t.status == 'live') return t.copyWith(status: 'completed');
+                return t;
+              })
               .toList(),
         );
       }).toList(),
@@ -67,6 +70,7 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
       event.room.id,
       event.talk.id,
       event.isLive,
+      isManual: true,
     );
     if (isClosed) return;
     result.fold(
@@ -95,8 +99,11 @@ class LiveRoomsBloc extends Bloc<LiveRoomsEvent, LiveRoomsState> {
           startTime: r.startTime,
           endTime: r.endTime,
           talks: r.talks
-              .map((t) => t.copyWith(
-                  status: t.id == event.talk.id ? 'live' : 'completed'))
+              .map((t) {
+                if (t.id == event.talk.id) return t.copyWith(status: 'live');
+                if (t.status == 'live') return t.copyWith(status: 'completed');
+                return t;
+              })
               .toList(),
         );
       }).toList(),

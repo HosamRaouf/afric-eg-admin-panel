@@ -7,7 +7,8 @@ abstract class LiveRoomAdminRepository {
   FutureResult<List<Room>> getRooms();
   StreamResult<List<Room>> watchRooms();
   FutureResult<void> setTalkLive(
-      String dayKey, String sessionId, String talkId, bool isLive);
+      String dayKey, String sessionId, String talkId, bool isLive,
+      {bool isManual = false});
   FutureResult<void> setTalkStatus(
       String dayKey, String sessionId, String talkId, String status);
   FutureResult<String?> findSessionPath(String sessionId);

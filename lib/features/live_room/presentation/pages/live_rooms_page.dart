@@ -1,4 +1,5 @@
 import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
+import 'package:afric_eg_admin_panel/core/services/talk_scheduler.dart';
 import 'package:afric_eg_admin_panel/core/theme/colors.dart';
 import 'package:afric_eg_admin_panel/core/widgets/admin_widgets.dart';
 import 'package:afric_eg_admin_panel/features/agenda/domain/entities/talk.dart';
@@ -47,6 +48,8 @@ class _LiveRoomsView extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+              const _SchedulerLeaderBar(),
               const SizedBox(height: 20),
               if (state.isLoading && state.rooms.isEmpty)
                 const Expanded(
@@ -394,6 +397,96 @@ class _TalkStatusDropdown extends StatelessWidget {
                 },
               ),
             ),
+    );
+  }
+}
+
+/// Leader status bar showing whether this device is the scheduler leader,
+/// with a toggle to manually claim or release leadership.
+class _SchedulerLeaderBar extends StatelessWidget {
+  const _SchedulerLeaderBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheduler = sl<TalkScheduler>();
+    return ValueListenableBuilder<bool>(
+      valueListenable: scheduler.isLeaderNotifier,
+      builder: (context, isLeader, _) {
+        return GlassCard(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          radius: 14,
+          child: Row(
+            children: [
+              Icon(
+                isLeader ? Icons.shield : Icons.shield_outlined,
+                size: 18,
+                color: isLeader
+                    ? AppColors.answeredGreen
+                    : AppColors.textTertiary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isLeader
+                          ? 'Scheduler Leader'
+                          : 'Scheduler Passive',
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isLeader
+                            ? AppColors.answeredGreen
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isLeader
+                          ? 'This device manages live talk transitions'
+                          : 'Another device is managing the scheduler',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isLeader)
+                const StatusBadge(
+                  label: 'LEADER',
+                  color: AppColors.answeredGreen,
+                )
+              else
+                SizedBox(
+                  height: 36,
+                  child: GlassButton(
+                    label: 'Be Leader',
+                    icon: Icons.power_settings_new,
+                    onPressed: () async {
+                      final acquired = await scheduler.forceLeadership();
+                      if (!acquired && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Could not acquire leadership. Try again.',
+                              style: TextStyle(fontFamily: 'Inter'),
+                            ),
+                            backgroundColor: AppColors.liveRed,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
