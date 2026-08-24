@@ -2,6 +2,7 @@ import 'package:afric_eg_admin_panel/core/di/injection_container.dart';
 import 'package:afric_eg_admin_panel/core/theme/colors.dart';
 import 'package:afric_eg_admin_panel/core/utils/ids.dart';
 import 'package:afric_eg_admin_panel/core/widgets/admin_widgets.dart';
+import 'package:afric_eg_admin_panel/core/widgets/image_upload_field.dart';
 import 'package:afric_eg_admin_panel/features/committee/domain/entities/committee_member.dart';
 import 'package:afric_eg_admin_panel/features/committee/domain/entities/committee_category.dart';
 import 'package:afric_eg_admin_panel/features/committee/presentation/bloc/committee_bloc.dart';
@@ -412,11 +413,13 @@ class _MemberDialogState extends State<_MemberDialog> {
   late final TextEditingController _description;
   late final TextEditingController _image;
   late String _categoryId;
+  late final String _memberId;
 
   @override
   void initState() {
     super.initState();
     final m = widget.member;
+    _memberId = m?.id ?? Ids.generate();
     _name = TextEditingController(text: m?.name ?? '');
     _role = TextEditingController(text: m?.role ?? '');
     _description = TextEditingController(text: m?.description ?? '');
@@ -438,7 +441,7 @@ class _MemberDialogState extends State<_MemberDialog> {
 
     final isNew = widget.member == null;
     final member = CommitteeMember(
-      id: widget.member?.id ?? Ids.generate(),
+      id: _memberId,
       name: _name.text.trim(),
       role: _role.text.trim(),
       description: _description.text.trim(),
@@ -494,9 +497,16 @@ class _MemberDialogState extends State<_MemberDialog> {
                     enabled: !state.isSaving,
                   ),
                   const SizedBox(height: 14),
+                  ImageUploadField(
+                    urlController: _image,
+                    objectId: _memberId,
+                    pathPrefix: 'committee',
+                  ),
+                  const SizedBox(height: 14),
                   GlassTextField(
                     label: 'Image URL',
                     controller: _image,
+                    hint: 'https://…',
                     enabled: !state.isSaving,
                   ),
                   const SizedBox(height: 14),
