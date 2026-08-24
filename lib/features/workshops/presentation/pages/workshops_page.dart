@@ -707,11 +707,25 @@ class _WorkshopSessionsDialog extends StatelessWidget {
                                       color: AppColors.accent,
                                     ),
                                   const SizedBox(width: 8),
-                                  GhostIconButton(
+                                   GhostIconButton(
                                     icon: Icons.edit_outlined,
                                     onPressed: busy
                                         ? null
                                         : () => _openSessionEditor(
+                                            context,
+                                            workshopId: workshop.id,
+                                            session: s,
+                                          ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  GhostIconButton(
+                                    icon: Icons.delete_outline,
+                                    color: busy
+                                        ? AppColors.textDisabled
+                                        : AppColors.liveRedLight,
+                                    onPressed: busy
+                                        ? null
+                                        : () => _confirmDeleteSession(
                                             context,
                                             workshopId: workshop.id,
                                             session: s,
@@ -778,6 +792,63 @@ class _WorkshopSessionsDialog extends StatelessWidget {
           ? 'The session was added to the workshop.'
           : 'The session was updated.',
       errorTitle: 'Could not save session',
+    );
+  }
+
+  Future<void> _confirmDeleteSession(
+    BuildContext context, {
+    required String workshopId,
+    required WorkshopSession session,
+  }) async {
+    final bloc = context.read<WorkshopBloc>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF2a0f10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.glassBorder),
+        ),
+        title: const Text(
+          'Delete session?',
+          style: TextStyle(fontFamily: 'Inter', fontSize: 16),
+        ),
+        content: Text(
+          session.isBreak ? 'Break' : session.topic,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 12,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.liveRed),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await runActionWithFeedback(
+      context: context,
+      stream: bloc.stream,
+      isComplete: (WorkshopState s) => !s.isSaving,
+      errorOf: (WorkshopState s) => s.error,
+      dispatch: () => bloc.add(
+        DeleteWorkshopSessionEvent(workshopId, session.id),
+      ),
+      loadingMessage: 'Deleting session…',
+      successTitle: 'Session deleted',
+      successMessage: 'The session was removed.',
+      errorTitle: 'Could not delete session',
     );
   }
 }
